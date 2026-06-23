@@ -6,6 +6,7 @@ peft>=0.14
 bitsandbytes>=0.45
 trl>=0.15
 numpy>=1.26
+wfdb>=4.1
 pandas>=2.2
 scikit-learn>=1.5
 tqdm>=4.67

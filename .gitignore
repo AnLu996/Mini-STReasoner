@@ -11,3 +11,5 @@ checkpoints/*
 outputs/*
 !outputs/.gitkeep
 data/processed_cot/
+data/ecgqa_small/
+.venv-smoke/

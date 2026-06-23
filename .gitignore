@@ -13,3 +13,6 @@ outputs/*
 data/processed_cot/
 data/ecgqa_small/
 .venv-smoke/
+Visualization/ecgqa_viz_data.js
+Visualization/ecgqa_viz_data.json
+.venv

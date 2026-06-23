@@ -119,5 +119,11 @@ run_stage "stage7_summary" "$PYTHON" scripts/summarize_ecgqa_small.py \
   --data_dir "$OUTPUT_DIR" \
   --outputs_dir "$RESULTS_DIR"
 
+run_stage "stage8_export_viz" "$PYTHON" scripts/export_visualizer_data.py \
+  --results_dir "$RESULTS_DIR" \
+  --processed "$OUTPUT_DIR/processed_test.jsonl" \
+  --output Visualization/ecgqa_viz_data.js
+
 echo ""
 echo "Pipeline finished. Artefacts in $RESULTS_DIR"
+echo "Visualizador: abre Visualization/visualizador_d3.html en el navegador (carga Visualization/ecgqa_viz_data.js)"

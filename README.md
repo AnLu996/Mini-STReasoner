@@ -141,6 +141,28 @@ outputs/ecgqa_small/selected_cases.jsonl
 outputs/ecgqa_small/run_summary.json
 ```
 
+### Visualizador D3
+
+El dashboard `Visualization/visualizador_d3.html` (5 paneles: flujo multimodal, rendimiento + matriz de confusion, embeddings, relevancia texto/ECG y QA con intervenciones contrafactuales) puede mostrar **los resultados reales** del run. Para conectarlo:
+
+```bash
+python scripts/export_visualizer_data.py \
+  --results_dir outputs/ecgqa_small \
+  --processed data/ecgqa_small/processed_test.jsonl \
+  --output Visualization/ecgqa_viz_data.js
+```
+
+Esto genera `Visualization/ecgqa_viz_data.js` (un `window.ECGQA_DATA = {...}`). El pipeline maestro ya lo ejecuta como Etapa 8. Despues solo abre `Visualization/visualizador_d3.html` en el navegador (doble clic; requiere internet para cargar D3 por CDN). Si el archivo de datos no existe, el visualizador usa sus datos sinteticos de demostracion.
+
+Que muestra con datos reales:
+- prediccion del modelo vs respuesta correcta por muestra (panel QA);
+- tabla de intervenciones reales (`question_cf`, `neutral`, perturbaciones ECG, conflictos) con marca de *flip*;
+- dominancia por muestra `D = QCFR / (QCFR + ECFR)` y veredicto;
+- accuracy por tipo de pregunta y matriz de confusion (clic en celda = filtrar);
+- la onda ECG real (derivacion configurable con `--lead`) con saliencia por segmento (proxy de energia).
+
+Los paneles de embeddings (V3) y relevancia de tokens (V4) usan proyecciones/atribuciones aproximadas para ilustracion; las metricas de rendimiento, dominancia, predicciones e intervenciones son reales.
+
 ## Limitaciones
 
 Esta minirreplica no busca reproducir las cifras del paper: no usa Qwen3-8B, S-GRPO, ocho A100 ni el entrenamiento completo en tres etapas. La atencion del encoder y la saliencia por gradiente son explicaciones del modulo temporal, no pruebas causales por si solas. El objetivo es disponer de una base pequena y auditable para estudiar dominancia modal textual.

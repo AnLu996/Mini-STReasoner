@@ -365,7 +365,7 @@ function renderFlow(){const s=selSample(),cfg=state.filters.config,o=outcome(s,c
     {id:"ecg",lab:"ECG",sub:"C×T",x:0,on:ecgOn,col:"var(--sig-mod)"},
     {id:"enc",lab:"Encoder temporal",sub:"MLP 5 capas",x:1,on:encOn,col:"var(--sig-mod)"},
     {id:"proy",lab:"Proyector",sub:"→ espacio LLM",x:2,on:proyOn,col:"var(--sig-mod)"},
-    {id:"txt",lab:"Embeddings texto",sub:"pregunta+opciones",x:2,on:true,col:"var(--text-mod)",row:1},
+    {id:"txt",lab:"Embeddings texto",sub:"pregunta+opciones",x:2,on:cfg!=="sin texto",col:"var(--text-mod)",row:1},
     {id:"llm",lab:"LLM (Qwen3)",sub:"interleaving",x:3,on:true,col:"#7d8893"},
     {id:"resp",lab:"Respuesta",sub:"<think>/<answer>",x:4,on:true,col:"#7d8893"},
     {id:"exp",lab:"Módulo explicable",sub:"Dtexto",x:5,on:true,col:o.level==="high"?"var(--alert)":"var(--ok)"}];
@@ -481,17 +481,27 @@ function applyRealData(payload){
   CLASSES=(payload.classes&&payload.classes.length)?payload.classes:CLASSES;
   DATA=payload.samples.map((s,i)=>{s.id=i;s._sig={arr:s.sig.arr,beats:[],featPatch:s.sig.featPatch};return s;});
 
-  // Las métricas vienen precalculadas por muestra; outcome solo las expone.
-  outcome=function(s){return {dom:(s.D==null?0:s.D),pred:s.pred,correct:!!s.correct,
-    dTexto:(s.dTexto==null?0:s.dTexto),dEcg:(s.dEcg==null?0:s.dEcg),
-    D:(s.D==null?0:s.D),level:s.level||"low"};};
+  // Métricas precalculadas por muestra. La predicción/acierto dependen de la
+  // configuración de ablación (V1/V2); la dominancia D viene de los contrafactuales.
+  outcome=function(s,config){
+    const bc=(s.byConfig&&config&&s.byConfig[config])?s.byConfig[config]:null;
+    return {dom:(s.D==null?0:s.D),pred:bc?bc.pred:s.pred,correct:bc?!!bc.correct:!!s.correct,
+      dTexto:(s.dTexto==null?0:s.dTexto),dEcg:(s.dEcg==null?0:s.dEcg),
+      D:(s.D==null?0:s.D),level:s.level||"low"};};
   ecgSignal=function(s){return s._sig;};
   relevanceTokens=function(s){const r=rng(4000+s.id),o=outcome(s),toks=[];
-    s.question.split(/\s+/).forEach(w=>toks.push({w,type:"q",contrib:Math.min(0.95,0.12+r()*0.3)}));
+    if(s.tokens&&s.tokens.length){  // saliencia por gradiente real (tokens de la pregunta)
+      s.tokens.forEach(t=>toks.push({w:t.w,type:"q",contrib:Math.max(0.02,Math.min(0.96,t.contrib))}));
+    }else{
+      s.question.split(/\s+/).forEach(w=>toks.push({w,type:"q",contrib:Math.min(0.95,0.12+r()*0.3)}));
+    }
+    // Las opciones no entran al prompt ECG-QA: se muestran como etiquetas (sin heat).
     s.options.forEach((op,i)=>toks.push({w:op,type:"opt",label:String.fromCharCode(65+i),
-      contrib:Math.min(0.95,(op===o.pred?0.55:0.2)+r()*0.2),isPred:op===o.pred}));
+      contrib:(op===o.pred?0.18:0.06),isPred:op===o.pred}));
     return toks;};
-  embForSample=function(s,condition){const r=rng(5000+s.id+(condition==="completo"?0:condition==="perturbado"?1:2)),D=14,pts=[];
+  embForSample=function(s,condition){
+    if(s.emb3&&s.emb3[condition])return s.emb3[condition];  // embeddings reales del espacio del LLM
+    const r=rng(5000+s.id+(condition==="completo"?0:condition==="perturbado"?1:2)),D=14,pts=[];
     const cText=Array.from({length:D},(_,i)=>(i<7?1.5:-0.2)+gauss(r)*0.05),cSig=Array.from({length:D},(_,i)=>(i<7?-0.2:1.5)+gauss(r)*0.05);
     s.question.split(/\s+/).slice(0,10).forEach(w=>pts.push({label:w,kind:"texto",emb:cText.map(c=>c+gauss(r)*0.3)}));
     s.options.forEach((op,i)=>pts.push({label:"["+String.fromCharCode(65+i)+"] "+op,kind:"opción",emb:cText.map((c,j)=>c+gauss(r)*0.3+(j<3?0.4:0))}));

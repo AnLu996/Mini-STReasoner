@@ -120,7 +120,19 @@ python training/train_ecgqa_lora_small.py --train data/ecgqa_small/processed_tra
 python scripts/evaluate_ecgqa_small.py --model_path checkpoints/ecgqa_small_lora --test data/ecgqa_small/processed_test.jsonl --max_samples 100 --output outputs/ecgqa_small/evaluation.jsonl
 # 6. contrafactuales (QCFR, ECFR, dominancia textual, conflictos)
 python counterfactual/run_ecgqa_counterfactual_small.py --model_path checkpoints/ecgqa_small_lora --data data/ecgqa_small/processed_test.jsonl --max_samples 50 --output outputs/ecgqa_small/counterfactual_results.jsonl
+# 6b. ablacion modal (full / no_text / no_series / conflict_text)
+python scripts/run_ecgqa_ablation_small.py --model_path checkpoints/ecgqa_small_lora --test data/ecgqa_small/processed_test.jsonl --max_samples 100 --output outputs/ecgqa_small/ablation.jsonl
 ```
+
+La ablacion evalua el test quitando una modalidad cada vez (`no_text` = solo ECG, `no_series` = solo texto) y con `conflict_text` (nota enganosa contra el ECG). Reporta EM/Token F1/accuracy yes-no por configuracion y la **dominancia modal** del paper:
+
+```text
+text_contribution = full - no_text
+ecg_contribution  = full - no_series
+textual_dominance = text_contribution - ecg_contribution   (positivo = depende mas del texto)
+```
+
+global y por `question_type` (`ablation_summary.json`, `ablation_by_config.csv`, `ablation_by_question_type.csv`). Es la Etapa 6b del pipeline maestro y alimenta los paneles V1/V2 del visualizador (selector de Configuracion con `completo / sin ECG / sin texto / texto en conflicto`).
 
 `download_ecgqa_small.py` clona el repo ECG-QA (`v1.0.2`) y descarga unicamente los registros WFDB de PTB-XL referenciados por el subconjunto elegido. La senal entra al encoder como serie temporal `[tiempo, derivaciones]`, nunca como texto. Requiere `wfdb` (ya incluido en `requirements.txt`).
 
@@ -138,6 +150,10 @@ outputs/ecgqa_small/evaluation_by_attribute_type.csv
 outputs/ecgqa_small/counterfactual_summary.json
 outputs/ecgqa_small/counterfactual_by_question_type.csv
 outputs/ecgqa_small/selected_cases.jsonl
+outputs/ecgqa_small/ablation.jsonl
+outputs/ecgqa_small/ablation_summary.json
+outputs/ecgqa_small/ablation_by_config.csv
+outputs/ecgqa_small/ablation_by_question_type.csv
 outputs/ecgqa_small/run_summary.json
 ```
 
@@ -154,6 +170,18 @@ python scripts/export_visualizer_data.py \
 
 Esto genera `Visualization/ecgqa_viz_data.js` (un `window.ECGQA_DATA = {...}`). El pipeline maestro ya lo ejecuta como Etapa 8. Despues solo abre `Visualization/visualizador_d3.html` en el navegador (doble clic; requiere internet para cargar D3 por CDN). Si el archivo de datos no existe, el visualizador usa sus datos sinteticos de demostracion.
 
+Para que los paneles de embeddings (V3) y relevancia de tokens/ECG (V4) usen **atribuciones reales del modelo** (no proxies), ejecuta antes del export:
+
+```bash
+python scripts/compute_attributions_small.py \
+  --model_path checkpoints/ecgqa_small_lora \
+  --data data/ecgqa_small/processed_test.jsonl \
+  --max_samples 30 \
+  --output outputs/ecgqa_small/attributions.jsonl
+```
+
+Esto calcula, por muestra: saliencia por gradiente sobre la señal ECG (parches temporales), saliencia por gradiente sobre los embeddings de los tokens de la pregunta, y los embeddings reales del espacio del LLM (tokens de texto + tokens temporales proyectados) en tres condiciones (completo / ECG perturbado / sin proyector), reducidos a 16-dim por PCA. El pipeline maestro lo ejecuta como Etapa 7b y el exportador los fusiona automaticamente.
+
 Que muestra con datos reales:
 - prediccion del modelo vs respuesta correcta por muestra (panel QA);
 - tabla de intervenciones reales (`question_cf`, `neutral`, perturbaciones ECG, conflictos) con marca de *flip*;
@@ -161,7 +189,7 @@ Que muestra con datos reales:
 - accuracy por tipo de pregunta y matriz de confusion (clic en celda = filtrar);
 - la onda ECG real (derivacion configurable con `--lead`) con saliencia por segmento (proxy de energia).
 
-Los paneles de embeddings (V3) y relevancia de tokens (V4) usan proyecciones/atribuciones aproximadas para ilustracion; las metricas de rendimiento, dominancia, predicciones e intervenciones son reales.
+Con `attributions.jsonl` presente, los paneles de embeddings (V3) y relevancia de tokens/ECG (V4) tambien son reales (saliencia por gradiente y embeddings del espacio del LLM). Sin ese archivo, V3/V4 caen a proyecciones/atribuciones aproximadas, pero el resto (rendimiento, dominancia, predicciones e intervenciones) sigue siendo real.
 
 ## Limitaciones
 

@@ -183,8 +183,30 @@ def build_ecg_inputs(tokenizer, example: dict[str, Any], input_dim: int):
     return tokens["input_ids"], tokens["attention_mask"], series, time_mask
 
 
-def predict_ecg(tokenizer, model, config, example, max_new_tokens: int = 64) -> str:
-    """Greedy-decode an answer for one ECG-QA example."""
+def predict_ecg(
+    tokenizer,
+    model,
+    config,
+    example,
+    max_new_tokens: int = 64,
+    use_text: bool = True,
+    use_series: bool = True,
+    conflict_text: bool = False,
+) -> str:
+    """Greedy-decode an answer for one ECG-QA example.
+
+    ``use_text`` / ``use_series`` drop a whole modality for modal-ablation runs
+    (only the temporal tokens, or only the text tokens, reach the LLM).
+    ``conflict_text`` prepends a misleading note so the question pushes against
+    the ECG evidence.
+    """
+    if conflict_text:
+        question = str(example.get("question", ""))
+        example = {
+            **example,
+            "question": "Note: the accompanying clinical note may be incorrect; "
+            "rely on the ECG signal itself. " + question,
+        }
     input_ids, attention_mask, series, time_mask = build_ecg_inputs(
         tokenizer, example, config["input_dim"]
     )
@@ -193,6 +215,8 @@ def predict_ecg(tokenizer, model, config, example, max_new_tokens: int = 64) -> 
         attention_mask=attention_mask,
         time_series=series,
         time_mask=time_mask,
+        use_text=use_text,
+        use_series=use_series,
         max_new_tokens=max_new_tokens,
         do_sample=False,
         pad_token_id=tokenizer.pad_token_id,

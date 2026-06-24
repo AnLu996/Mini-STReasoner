@@ -74,6 +74,9 @@ def main() -> None:
 
     evaluation = load_json(out_dir / "evaluation_summary.json").get("global", {})
     cf = load_json(out_dir / "counterfactual_summary.json").get("global", {})
+    abl = load_json(out_dir / "ablation_summary.json").get("global", {})
+    abl_per_config = abl.get("per_config", {})
+    abl_dom = abl.get("dominance", {})
     selected_path = out_dir / "selected_cases.jsonl"
 
     summary = {
@@ -85,6 +88,7 @@ def main() -> None:
         "ecg_shape": ecg_shape,
         "evaluation": evaluation,
         "counterfactual": cf,
+        "ablation": abl,
         "selected_cases": str(selected_path),
     }
     (out_dir).mkdir(parents=True, exist_ok=True)
@@ -113,6 +117,12 @@ def main() -> None:
         f"Textual dominance: {fmt(cf.get('textual_dominance'))}",
         f"Conflict follows question: {fmt(cf.get('conflict_follow_question_rate'))}",
         f"Conflict follows ECG: {fmt(cf.get('conflict_follow_ecg_rate'))}",
+        "",
+        "Ablation (Token F1 por configuración):",
+        *([f"  {cfg}: {fmt(m.get('token_f1'))}" for cfg, m in abl_per_config.items()] or ["  (no calculada)"]),
+        f"Text contribution (full−no_text): {fmt(abl_dom.get('text_contribution'))}",
+        f"ECG contribution (full−no_series): {fmt(abl_dom.get('ecg_contribution'))}",
+        f"Modal textual dominance: {fmt(abl_dom.get('textual_dominance'))}",
         "",
         "Selected cases saved to:",
         str(selected_path),

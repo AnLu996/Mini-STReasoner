@@ -22,6 +22,8 @@ set -Eeuo pipefail
 #   TRAIN_SAMPLES     Stage-4 training samples                   (default: 300)
 #   EVAL_SAMPLES      Stage-5 test samples                       (default: 100)
 #   CF_SAMPLES        Stage-6 counterfactual samples             (default: 50)
+#   ABL_SAMPLES       Stage-6b modal-ablation samples            (default: 100)
+#   ATTR_SAMPLES      Stage-7b real-attribution samples (V3/V4)  (default: 30)
 #   EPOCHS            Training epochs                            (default: 1)
 #   BATCH_SIZE        Training batch size                        (default: 1)
 #   GRAD_ACCUM        Gradient accumulation steps                (default: 8)
@@ -46,6 +48,8 @@ INFER_SAMPLES="${INFER_SAMPLES:-20}"
 TRAIN_SAMPLES="${TRAIN_SAMPLES:-300}"
 EVAL_SAMPLES="${EVAL_SAMPLES:-100}"
 CF_SAMPLES="${CF_SAMPLES:-50}"
+ABL_SAMPLES="${ABL_SAMPLES:-100}"
+ATTR_SAMPLES="${ATTR_SAMPLES:-30}"
 EPOCHS="${EPOCHS:-1}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-8}"
@@ -119,9 +123,25 @@ run_stage "stage7_summary" "$PYTHON" scripts/summarize_ecgqa_small.py \
   --data_dir "$OUTPUT_DIR" \
   --outputs_dir "$RESULTS_DIR"
 
+run_stage "stage6b_ablation" "$PYTHON" scripts/run_ecgqa_ablation_small.py \
+  --model_path "$CKPT_DIR" \
+  --test "$OUTPUT_DIR/processed_test.jsonl" \
+  --max_samples "$ABL_SAMPLES" \
+  --device "$DEVICE" \
+  --output "$RESULTS_DIR/ablation.jsonl"
+
+run_stage "stage7b_attributions" "$PYTHON" scripts/compute_attributions_small.py \
+  --model_path "$CKPT_DIR" \
+  --data "$OUTPUT_DIR/processed_test.jsonl" \
+  --max_samples "$ATTR_SAMPLES" \
+  --device "$DEVICE" \
+  --output "$RESULTS_DIR/attributions.jsonl"
+
 run_stage "stage8_export_viz" "$PYTHON" scripts/export_visualizer_data.py \
   --results_dir "$RESULTS_DIR" \
   --processed "$OUTPUT_DIR/processed_test.jsonl" \
+  --attributions "$RESULTS_DIR/attributions.jsonl" \
+  --ablation "$RESULTS_DIR/ablation.jsonl" \
   --output Visualization/ecgqa_viz_data.js
 
 echo ""

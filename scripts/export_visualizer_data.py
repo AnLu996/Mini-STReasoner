@@ -47,6 +47,15 @@ QTYPE_MAP = {
     "single-query": "consulta",
 }
 
+# Modal-ablation config key -> Spanish label shown in the visualizer (V1/V2).
+# "completo" (=full) is always first so it stays the default config.
+ABLATION_LABELS = [
+    ("full", "completo"),
+    ("no_series", "sin ECG"),
+    ("no_text", "sin texto"),
+    ("conflict_text", "texto en conflicto"),
+]
+
 
 def map_qtype(question_type: str) -> str:
     if question_type.startswith("comparison"):
@@ -139,6 +148,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--results_dir", type=Path, default=PROJECT_ROOT / "outputs/ecgqa_small")
     parser.add_argument("--processed", type=Path, default=PROJECT_ROOT / "data/ecgqa_small/processed_test.jsonl")
     parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "Visualization/ecgqa_viz_data.js")
+    parser.add_argument("--attributions", type=Path, default=PROJECT_ROOT / "outputs/ecgqa_small/attributions.jsonl",
+                        help="Real model attributions (from compute_attributions_small.py); optional")
+    parser.add_argument("--ablation", type=Path, default=PROJECT_ROOT / "outputs/ecgqa_small/ablation.jsonl",
+                        help="Modal-ablation results (from run_ecgqa_ablation_small.py); optional")
     parser.add_argument("--lead", type=int, default=1, help="ECG lead to plot (default 1 = lead II)")
     parser.add_argument("--max_samples", type=int, default=0, help="Cap exported samples (0 = all)")
     return parser.parse_args()
@@ -150,6 +163,8 @@ def main() -> None:
     eval_rows = load_jsonl(args.results_dir / "evaluation.jsonl")
     processed = {r["id"]: r for r in load_jsonl(args.processed)}
     eval_by_id = {r["id"]: r for r in eval_rows}
+    attributions = {r["id"]: r for r in load_jsonl(args.attributions)}
+    ablation = {r["id"]: r for r in load_jsonl(args.ablation)}
 
     if not cf_rows and not eval_rows:
         raise SystemExit(
@@ -206,6 +221,28 @@ def main() -> None:
         else:
             wave, feat = [0.0] * PLOT_LEN, [0.3] * N_PATCH
 
+        # Real attributions (V3 embeddings + V4 token/ECG saliency) when available.
+        attr = attributions.get(rid)
+        real_attr = bool(attr)
+        tokens = attr.get("token_saliency") if attr else None
+        emb3 = attr.get("embeddings") if attr else None
+        if attr and attr.get("ecg_patch_saliency"):
+            feat = attr["ecg_patch_saliency"]  # gradient saliency overrides the energy proxy
+
+        # Modal ablation: per-config prediction + correctness for V1/V2.
+        abl = ablation.get(rid)
+        by_config: dict[str, dict[str, Any]] = {}
+        if abl:
+            for key, label in ABLATION_LABELS:
+                cfg = abl.get("configs", {}).get(key)
+                if not cfg:
+                    continue
+                by_config[label] = {
+                    "pred": clean_answer(cfg.get("prediction", "")),
+                    "correct": bool(cfg.get("exact_match")) or correctness(cfg.get("prediction", ""), gold),
+                    "f1": round(float(cfg.get("token_f1", 0.0)), 3),
+                }
+
         # Option set for the QA panel: gold + model answer (deduped, order-stable).
         options: list[str] = []
         for opt in (cls, pred):
@@ -235,23 +272,46 @@ def main() -> None:
             "interventions": interventions,
             "textImplied": pred,
             "sig": {"arr": wave, "featPatch": feat},
+            "tokens": tokens,
+            "emb3": emb3,
+            "real_attr": real_attr,
+            "byConfig": by_config or None,
         })
 
+    n_real_attr = sum(1 for s in samples if s["real_attr"])
+    n_ablation = sum(1 for s in samples if s["byConfig"])
+    # Config list for the visualizer: completo + the ablation configs actually present.
+    ablation_summary = load_json(args.ablation.parent / "ablation_summary.json") if args.ablation.exists() else {}
+    if n_ablation:
+        present = {label for s in samples if s["byConfig"] for label in s["byConfig"]}
+        configs = [label for _, label in ABLATION_LABELS if label in present]
+        if "completo" not in configs:
+            configs.insert(0, "completo")
+    else:
+        configs = ["completo"]
+    note = f"Datos reales · {len(samples)} muestras ECG-QA · fuente: {source_name}"
+    if n_real_attr:
+        note += f" · atribuciones reales en {n_real_attr}"
+    if n_ablation:
+        note += f" · ablación en {n_ablation}"
     payload = {
         "meta": {
             "source": "ecgqa_small",
             "from": source_name,
             "n": len(samples),
             "lead": args.lead,
-            "note": f"Datos reales · {len(samples)} muestras ECG-QA · fuente: {source_name}",
+            "real_attributions": n_real_attr,
+            "ablation": n_ablation,
+            "note": note,
         },
         "globals": {
             "evaluation": load_json(args.results_dir / "evaluation_summary.json").get("global", {}),
             "counterfactual": load_json(args.results_dir / "counterfactual_summary.json").get("global", {}),
+            "ablation": ablation_summary.get("global", {}),
         },
         "qtypes": qtypes_seen,
         "classes": sorted(classes_seen),
-        "configs": ["completo"],
+        "configs": configs,
         "samples": samples,
     }
 
@@ -264,6 +324,9 @@ def main() -> None:
     print(json.dumps({
         "samples": len(samples),
         "source": source_name,
+        "real_attributions": n_real_attr,
+        "ablation": n_ablation,
+        "configs": configs,
         "qtypes": qtypes_seen,
         "classes": len(classes_seen),
         "output": str(args.output),

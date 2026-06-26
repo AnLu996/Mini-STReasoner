@@ -191,6 +191,72 @@ Que muestra con datos reales:
 
 Con `attributions.jsonl` presente, los paneles de embeddings (V3) y relevancia de tokens/ECG (V4) tambien son reales (saliencia por gradiente y embeddings del espacio del LLM). Sin ese archivo, V3/V4 caen a proyecciones/atribuciones aproximadas, pero el resto (rendimiento, dominancia, predicciones e intervenciones) sigue siendo real.
 
+## Trazado representacional interno
+
+`xai/representational_tracing.py` pasa de la auditoria contrafactual *post-hoc* a un **trazado representacional interno** (tambien llamado *trazado contrafactual de sensibilidad modal*). Para cada caso corre cinco condiciones:
+
+```text
+Original : ECG + pregunta
+Text-CF  : ECG + pregunta reescrita (meaning-preserving)
+ECG-CF   : ECG perturbado + pregunta original
+Neutral  : ECG + pregunta neutral
+Conflict : ECG/pregunta contradictorios
+```
+
+y captura resumenes por etapa del flujo multimodal mediante **forward hooks** del modelo (encoder temporal y proyector) mas `output_hidden_states` del LLM:
+
+```text
+encoder_output  ·  projector_output  ·  inputs_embeds (fusion)  ·  hidden_states del LLM  ·  logits / respuesta
+```
+
+Por etapa calcula distancias representacionales simples y estables (coseno o L2 normalizada) comparando *original vs Text-CF* y *original vs ECG-CF*:
+
+```text
+impacto_texto       = dist(original, Text-CF)   (None en encoder/proyector: el texto no atraviesa esas etapas)
+impacto_ECG         = dist(original, ECG-CF)
+diferencia_texto_ECG = impacto_texto - impacto_ECG
+```
+
+No hay backpropagation. La clasificacion por caso es `TEXT_DOMINANT / ECG_DOMINANT / BALANCED / INSENSITIVE / UNCLEAR` (la clase `INSENSITIVE` marca casos que no se mueven ni con texto ni con ECG). El diagnostico usa la formulacion correcta: **el sesgo se manifiesta o se amplifica** en una etapa, nunca que "nace" en ella.
+
+```bash
+python xai/representational_tracing.py \
+  --model_path checkpoints/ecgqa_small_lora \
+  --data data/ecgqa_small/processed_test.jsonl \
+  --max_samples 30 \
+  --metric cosine \
+  --ecg_segments 6
+```
+
+Salidas:
+
+```text
+outputs/tracing/representational_tracing.jsonl   (un caso por linea, con stages/latent/interventions)
+outputs/tracing/stage_sensitivity_summary.json   (agregado por etapa + etapa de amplificacion + class_counts)
+visualizer/tracing_data.js                        (window.TRACING_DATA para el visualizador)
+```
+
+Si las activaciones internas no estan disponibles (`--output_only` o un fallo al capturar hooks), el modulo **no inventa valores**: cae a modo `contrafactual_global` y solo reporta la sensibilidad de salida (flips de la respuesta); el visualizador lo marca como "contrafactual global". Es la Etapa 7c del pipeline maestro.
+
+### Visualizador (trazado interno)
+
+`visualizer/visualizador_d3.html` carga `visualizer/tracing_data.js` y, si no existe, usa datos sinteticos de demostracion claramente etiquetados. Vistas:
+
+```text
+V1  Trazado representacional interno   ECG -> Encoder -> Proyector -> Fusion -> LLM -> Respuesta,
+                                       con impacto ECG / impacto texto / diferencia por bloque y color por dominancia.
+V2  Sensibilidad modal por etapa       tabla/heatmap (impacto texto | impacto ECG | diferencia | diagnostico).
+V3  Espacio latente texto-ECG          proyeccion 2D con flechas original->contrafactual (ECG y pregunta).
+V4  Pesos texto/serie + evidencia      pesos del texto (relevancia por palabra) y de la serie temporal
+                                       (relevancia por segmento ECG), mas las intervenciones con marca de
+                                       si cambio la respuesta (evidencia local por contrafactual, no causal).
+                                       Los pesos reales vienen de attributions.jsonl (saliencia por gradiente,
+                                       Etapa 7b); el trazado los lee de disco, no recalcula gradientes.
+V5  Pregunta-respuesta contrafactual   original/esperada/pregunta-modif/ECG-modif/neutral/conflicto + clase de dominancia.
+```
+
+El panel lateral filtra por `case_dominance`, `question_type`, `attribute_type`, `text_dominance` (alta/media/baja) e `INSENSITIVE`.
+
 ## Limitaciones
 
-Esta minirreplica no busca reproducir las cifras del paper: no usa Qwen3-8B, S-GRPO, ocho A100 ni el entrenamiento completo en tres etapas. La atencion del encoder y la saliencia por gradiente son explicaciones del modulo temporal, no pruebas causales por si solas. El objetivo es disponer de una base pequena y auditable para estudiar dominancia modal textual.
+Esta minirreplica no busca reproducir las cifras del paper: no usa Qwen3-8B, S-GRPO, ocho A100 ni el entrenamiento completo en tres etapas. La atencion del encoder y la saliencia por gradiente son explicaciones del modulo temporal, no pruebas causales por si solas. El trazado representacional interno mide *sensibilidad* (cuanto se mueve la representacion ante una intervencion), no causalidad; las clases de dominancia describen el comportamiento observado, no su origen. El objetivo es disponer de una base pequena y auditable para estudiar dominancia modal textual.

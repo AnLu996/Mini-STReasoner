@@ -90,6 +90,13 @@ def main() -> None:
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
+    # cuDNN no soporta el backward de una RNN (la GRU del encoder) con el modelo en
+    # modo eval -> "cudnn RNN backward can only be called in training mode". Se
+    # desactiva cuDNN para usar el kernel nativo (sí permite backward en eval) y así
+    # calcular la saliencia por gradiente sin poner el modelo en modo entrenamiento.
+    # Impacto de rendimiento despreciable para este subconjunto pequeño.
+    torch.backends.cudnn.enabled = False
+
     from inference.runtime import load_checkpoint  # noqa: E402
 
     tokenizer, model, config = load_checkpoint(

@@ -24,6 +24,9 @@ set -Eeuo pipefail
 #   CF_SAMPLES        Stage-6 counterfactual samples             (default: 50)
 #   ABL_SAMPLES       Stage-6b modal-ablation samples            (default: 100)
 #   ATTR_SAMPLES      Stage-7b real-attribution samples (V3/V4)  (default: 30)
+#   TRACE_SAMPLES     Stage-7c representational-tracing samples   (default: 30)
+#   TRACE_METRIC      cosine | l2 (representational distance)     (default: cosine)
+#   TRACE_SEGMENTS    ECG segment interventions per case (V4)     (default: 6)
 #   EPOCHS            Training epochs                            (default: 1)
 #   BATCH_SIZE        Training batch size                        (default: 1)
 #   GRAD_ACCUM        Gradient accumulation steps                (default: 8)
@@ -50,6 +53,9 @@ EVAL_SAMPLES="${EVAL_SAMPLES:-100}"
 CF_SAMPLES="${CF_SAMPLES:-50}"
 ABL_SAMPLES="${ABL_SAMPLES:-100}"
 ATTR_SAMPLES="${ATTR_SAMPLES:-30}"
+TRACE_SAMPLES="${TRACE_SAMPLES:-30}"
+TRACE_METRIC="${TRACE_METRIC:-cosine}"
+TRACE_SEGMENTS="${TRACE_SEGMENTS:-6}"
 EPOCHS="${EPOCHS:-1}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-8}"
@@ -136,6 +142,17 @@ run_stage "stage7b_attributions" "$PYTHON" scripts/compute_attributions_small.py
   --max_samples "$ATTR_SAMPLES" \
   --device "$DEVICE" \
   --output "$RESULTS_DIR/attributions.jsonl"
+
+run_stage "stage7c_tracing" "$PYTHON" xai/representational_tracing.py \
+  --model_path "$CKPT_DIR" \
+  --data "$OUTPUT_DIR/processed_test.jsonl" \
+  --max_samples "$TRACE_SAMPLES" \
+  --metric "$TRACE_METRIC" \
+  --ecg_segments "$TRACE_SEGMENTS" \
+  --device "$DEVICE" \
+  --output outputs/tracing/representational_tracing.jsonl \
+  --summary_output outputs/tracing/stage_sensitivity_summary.json \
+  --viz_output visualizer/tracing_data.js
 
 run_stage "stage8_export_viz" "$PYTHON" scripts/export_visualizer_data.py \
   --results_dir "$RESULTS_DIR" \

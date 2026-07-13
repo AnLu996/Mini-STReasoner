@@ -462,11 +462,12 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
         apply_ecg_transform([signal.tolist()], "ecg_cf_noise", seed=seed)[0], dtype=np.float32
     )
 
-    def gen(q: str, sig: np.ndarray) -> str:
+    def gen(q: str, sig: np.ndarray, use_series: bool = True) -> str:
         return predict_ecg(
             tokenizer, model, config,
             {"question": q, "ecg_signal": [sig.tolist()]},
             max_new_tokens=max_new_tokens,
+            use_series=use_series,
         )
 
     predictions = {
@@ -475,6 +476,8 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
         "ecg_cf": gen(question, signal_ecgcf),
         "neutral": gen(q_neutral, signal),
         "conflict": gen(q_conflict, signal),
+        # Escenario "Sin ECG": se elimina toda la modalidad temporal (offline, no en vivo).
+        "no_ecg": gen(question, signal, use_series=False),
     }
     base = normalize(predictions["original"])
     flips = {k: (normalize(v) != base) for k, v in predictions.items() if k != "original"}
@@ -563,6 +566,7 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
         interventions.append({
             "label": f"ECG segmento {seg + 1}/{ecg_segments}",
             "kind": "ecg",
+            "segment": [round(start, 4), round(start + 1.0 / max(ecg_segments, 1), 4)],
             "detail": f"ventana temporal [{start:.2f}, {start + 1.0 / ecg_segments:.2f}] enmascarada",
             "answer": ans,
             "changed": normalize(ans) != base,
@@ -579,6 +583,8 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
         "prediction_ecg_cf": predictions["ecg_cf"],
         "prediction_neutral": predictions["neutral"],
         "prediction_conflict": predictions["conflict"],
+        "prediction_no_ecg": predictions["no_ecg"],
+        "flips": flips,
         "stages": stages,
         "llm_layers": llm_layers,
         "case_dominance": dominance,
@@ -590,7 +596,15 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
         "any_flip": any_flip,
         "latent": latent,
         "interventions": interventions,
-        "sig": waveform_summary(signal),
+        # Onda original + onda intervenida (ECG-CF ruido) + ventanas alteradas, para
+        # la comparacion contrafactual local de V4 (todo precomputado, no en vivo).
+        "sig": {
+            **waveform_summary(signal),
+            "arr_cf": waveform_summary(signal_ecgcf)["arr"],
+            "altered_segments": [
+                iv["segment"] for iv in interventions if iv.get("segment")
+            ],
+        },
     }
 
 

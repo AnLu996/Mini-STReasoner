@@ -159,8 +159,10 @@ run_stage "stage8_export_viz" "$PYTHON" scripts/export_visualizer_data.py \
   --processed "$OUTPUT_DIR/processed_test.jsonl" \
   --attributions "$RESULTS_DIR/attributions.jsonl" \
   --ablation "$RESULTS_DIR/ablation.jsonl" \
-  --output Visualization/ecgqa_viz_data.js
+  --output visualizer/ecgqa_viz_data.js
 
 echo ""
 echo "Pipeline finished. Artefacts in $RESULTS_DIR"
-echo "Visualizador: abre Visualization/visualizador_d3.html en el navegador (carga Visualization/ecgqa_viz_data.js)"
+echo "Visualizadores (abrir en el navegador; requieren internet para D3 por CDN):"
+echo "  visualizer/visualizador_d3.html         (trazado interno · carga tracing_data.js)"
+echo "  visualizer/dashboard_dominancia_d3.html (dominancia ECG-QA · carga ecgqa_viz_data.js)"

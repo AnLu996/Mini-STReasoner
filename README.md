@@ -159,16 +159,16 @@ outputs/ecgqa_small/run_summary.json
 
 ### Visualizador D3
 
-El dashboard `Visualization/visualizador_d3.html` (5 paneles: flujo multimodal, rendimiento + matriz de confusion, embeddings, relevancia texto/ECG y QA con intervenciones contrafactuales) puede mostrar **los resultados reales** del run. Para conectarlo:
+El dashboard `visualizer/dashboard_dominancia_d3.html` (5 paneles: flujo multimodal, rendimiento + matriz de confusion, embeddings, relevancia texto/ECG y QA con intervenciones contrafactuales) puede mostrar **los resultados reales** del run. Para conectarlo:
 
 ```bash
 python scripts/export_visualizer_data.py \
   --results_dir outputs/ecgqa_small \
   --processed data/ecgqa_small/processed_test.jsonl \
-  --output Visualization/ecgqa_viz_data.js
+  --output visualizer/ecgqa_viz_data.js
 ```
 
-Esto genera `Visualization/ecgqa_viz_data.js` (un `window.ECGQA_DATA = {...}`). El pipeline maestro ya lo ejecuta como Etapa 8. Despues solo abre `Visualization/visualizador_d3.html` en el navegador (doble clic; requiere internet para cargar D3 por CDN). Si el archivo de datos no existe, el visualizador usa sus datos sinteticos de demostracion.
+Esto genera `visualizer/ecgqa_viz_data.js` (un `window.ECGQA_DATA = {...}`). El pipeline maestro ya lo ejecuta como Etapa 8. Despues solo abre `visualizer/dashboard_dominancia_d3.html` en el navegador (doble clic; requiere internet para cargar D3 por CDN). Si el archivo de datos no existe, el visualizador usa sus datos sinteticos de demostracion.
 
 Para que los paneles de embeddings (V3) y relevancia de tokens/ECG (V4) usen **atribuciones reales del modelo** (no proxies), ejecuta antes del export:
 
@@ -247,15 +247,21 @@ V1  Trazado representacional interno   ECG -> Encoder -> Proyector -> Fusion -> 
                                        con impacto ECG / impacto texto / diferencia por bloque y color por dominancia.
 V2  Sensibilidad modal por etapa       tabla/heatmap (impacto texto | impacto ECG | diferencia | diagnostico).
 V3  Espacio latente texto-ECG          proyeccion 2D con flechas original->contrafactual (ECG y pregunta).
-V4  Pesos texto/serie + evidencia      pesos del texto (relevancia por palabra) y de la serie temporal
-                                       (relevancia por segmento ECG), mas las intervenciones con marca de
-                                       si cambio la respuesta (evidencia local por contrafactual, no causal).
-                                       Los pesos reales vienen de attributions.jsonl (saliencia por gradiente,
-                                       Etapa 7b); el trazado los lee de disco, no recalcula gradientes.
+V4  Comparación contrafactual local    segun el escenario activo: ECG original vs ECG intervenido (resaltando
+                                       el segmento alterado) o pregunta original vs pregunta intervenida
+                                       (resaltando palabras modificadas, clicables). Muestra si la respuesta
+                                       cambio. No es atribucion causal.
 V5  Pregunta-respuesta contrafactual   original/esperada/pregunta-modif/ECG-modif/neutral/conflicto + clase de dominancia.
 ```
 
-El panel lateral filtra por `case_dominance`, `question_type`, `attribute_type`, `text_dominance` (alta/media/baja) e `INSENSITIVE`.
+Interactividad (todo sobre datos precomputados, sin recalcular el modelo):
+
+- **Selector de escenario** (Original / Pregunta modificada / Pregunta neutral / ECG modificado / Texto contradictorio / Sin ECG): coordina V1–V5 por `case_id` + `scenario`.
+- **V1**: hover en cada bloque muestra impacto_texto, impacto_ECG, diferencia y diagnóstico; clic abre un panel de detalle de etapa (Original vs Text-CF, Original vs ECG-CF, distancia usada, diagnóstico). Botón **Reproducir flujo** anima el recorrido etapa por etapa.
+- **V4**: en escenarios de texto, las palabras modificadas son clicables y muestran la comparación de frase (sin inventar impacto token-level).
+- **Panel lateral**: filtros por `case_dominance` (5 clases), comportamiento (solo cambia con texto / solo con ECG / no cambia / conflicto texto-ECG), `text_dominance`, `question_type`, `attribute_type`, y una **tabla compacta `Caso | D_text`** ordenada de mayor a menor (clic = cargar caso).
+
+Si falta un valor por etapa (modo `contrafactual_global`) o una predicción de escenario, el visualizador muestra **"no disponible"**; nunca inventa valores.
 
 ## Limitaciones
 

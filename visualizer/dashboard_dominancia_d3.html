@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visualizador explicable · Dominancia textual en ECG-QA (STReasoner)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<!-- Datos reales del pipeline (generados por scripts/export_visualizer_data.py).
+     Si el archivo no existe, el visualizador usa datos sintéticos de demostración. -->
+<script src="ecgqa_viz_data.js" onerror="console.info('ecgqa_viz_data.js no encontrado: usando datos sintéticos')"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#D7D3C8; --sidebar:#E7E3D9; --panel:#FBFAF5; --panel2:#EEEAE1; --line:#CBC5B7; --line2:#DBD6CB;
+  --txt:#222a32; --dim:#586470; --faint:#8a939e;
+  --text-mod:#bf7619; --sig-mod:#10848d;
+  --alert:#c2433a; --ok:#2f8b5b; --warn:#bd881c;
+  --mono:'IBM Plex Mono',ui-monospace,monospace; --sans:'IBM Plex Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:12.5px;line-height:1.4;-webkit-font-smoothing:antialiased}
+body{display:flex;flex-direction:row}
+h2{margin:0}
+svg{display:block}
+.axis path,.axis line{stroke:var(--line)}
+.axis text{fill:var(--faint);font-family:var(--mono);font-size:9px}
+.grid line{stroke:var(--line2);stroke-dasharray:2 4}
+
+/* sidebar (menú estático) */
+.sidebar{flex:0 0 214px;width:214px;background:var(--sidebar);border-right:1px solid var(--line);padding:13px 13px 16px;overflow-y:auto;display:flex;flex-direction:column;gap:13px}
+.brand .t1{font-weight:600;font-size:13px;line-height:1.25}
+.brand .t1 b{color:var(--text-mod)}.brand .t1 i{color:var(--sig-mod);font-style:normal;font-weight:600}
+.brand .t2{font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:4px;letter-spacing:.2px;line-height:1.35}
+.dommini{display:flex;flex-direction:column;gap:5px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px 10px;box-shadow:0 1px 2px rgba(70,64,52,.06)}
+.dommini .lab{font-family:var(--mono);font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;display:flex;justify-content:space-between}
+.dommini .val{font-family:var(--mono);font-size:14px;font-weight:600}
+.dommini .meter{width:100%;height:15px;border:1px solid var(--line);border-radius:6px;overflow:hidden;display:flex}
+.dommini .seg-t{background:linear-gradient(90deg,#e2a13d,#c98318)}
+.dommini .seg-s{background:linear-gradient(90deg,#1aa0a9,#0e7780)}
+.samplebar{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.samplebar .nav{font-family:var(--mono);font-size:12px;border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:6px;padding:4px 10px;cursor:pointer}
+.samplebar .nav:hover{border-color:var(--sig-mod)}
+.samplebar .info{font-family:var(--mono);font-size:9px;color:var(--dim);flex-basis:100%;margin-top:2px}
+.filters{display:flex;flex-direction:column;gap:8px}
+.fl{display:flex;flex-direction:column;gap:3px}
+.fl label{font-family:var(--mono);font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint)}
+.fl select{width:100%;background:var(--panel);color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:5px 7px;font-family:var(--mono);font-size:10.5px}
+.fl select:focus{outline:none;border-color:var(--sig-mod)}
+
+/* main + dashboard grid */
+.main{flex:1;min-width:0;min-height:0;display:flex}
+.dash{flex:1;min-height:0;display:grid;gap:9px;padding:10px 11px;grid-template-columns:repeat(3,1fr);grid-template-rows:auto 1fr 196px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 12px;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 2px rgba(60,52,38,.10),0 3px 8px rgba(60,52,38,.06)}
+.card.v1,.card.v4{grid-column:1 / -1}
+.head{flex:0 0 auto;display:flex;align-items:baseline;gap:8px;margin-bottom:2px}
+.vtag{font-family:var(--mono);font-size:9.5px;font-weight:600;color:#fff;background:var(--sig-mod);border-radius:5px;padding:2px 6px;letter-spacing:.5px}
+.head h2{font-size:12.5px;font-weight:600}
+.task{font-family:var(--mono);font-size:9.5px;color:var(--faint);margin-left:auto}
+.sub{flex:0 0 auto;font-family:var(--mono);font-size:9.5px;color:var(--faint);margin:2px 0 7px}
+.body{flex:1;min-height:0;display:flex;flex-direction:column}
+
+/* V1 */
+.flowsvg{flex:0 0 auto;width:100%;height:128px}
+.flowstats{flex:0 0 auto;display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}
+.stat{background:var(--panel2);border:1px solid var(--line2);border-radius:7px;padding:5px 8px;min-width:86px}
+.stat .k{font-family:var(--mono);font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.3px}
+.stat .v{font-family:var(--mono);font-size:12.5px;color:var(--txt);margin-top:1px}
+.stat.alert .v{color:var(--alert)}
+
+/* V2 */
+.barsvg{flex:0 0 78px;width:100%}
+.cmwrap{flex:1;min-height:0;margin-top:4px}
+#cm{width:100%;height:100%}
+.cm-note{flex:0 0 auto;font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:3px;line-height:1.3}
+
+/* V3 */
+.v3controls{flex:0 0 auto;display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.seg{display:inline-flex;gap:3px}
+.seg button{font-family:var(--mono);font-size:9.5px;padding:4px 7px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--dim);cursor:pointer}
+.seg button.on{background:#d8ecee;color:#0c5a61;border-color:var(--sig-mod)}
+.seg button:hover{color:var(--txt)}
+.embsvg{flex:1;min-height:0;width:100%}
+.v3legend{flex:0 0 auto;display:flex;gap:10px;flex-wrap:wrap;font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:5px}
+.v3legend .it{display:flex;align-items:center;gap:5px}.v3legend .dot{width:8px;height:8px;border-radius:50%}
+
+/* V4 (franja inferior, ECG amplio) */
+.card.v4 .body{flex-direction:row;gap:14px}
+.v4-left{flex:0 0 34%;min-width:0;display:flex;flex-direction:column}
+.v4-right{flex:1;min-width:0;display:flex;flex-direction:column}
+.relq{flex:1;overflow:hidden;font-size:12.5px;line-height:1.8;margin-bottom:4px}
+.tok{padding:1px 3px;border-radius:4px;cursor:pointer;transition:.15s}
+.tok.optlabel{font-weight:600}
+.tok.sel{outline:2px solid var(--txt)}
+.relsig{flex:1;min-height:96px;width:100%}
+.rellegend{flex:0 0 auto;font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:3px}
+.occbox{flex:0 0 auto;margin-top:auto;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:7px 9px;font-size:11px;line-height:1.4}
+.occbox b{color:var(--txt)}
+
+/* V5 */
+.qa-q{flex:0 0 auto;font-size:12.5px;margin-bottom:6px}
+.qa-q .qlabel{font-family:var(--mono);font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.4px;display:block;margin-bottom:2px}
+.opts{flex:0 0 auto;display:flex;flex-direction:column;gap:4px;margin:4px 0 7px}
+.opt{display:flex;gap:7px;align-items:center;padding:4px 8px;border:1px solid var(--line2);border-radius:7px;font-size:11.5px}
+.opt .ol{font-family:var(--mono);color:var(--faint);flex:0 0 14px}
+.opt.correct{border-color:#9bd0b2;background:#e7f4ec}
+.opt.pred{box-shadow:inset 0 0 0 1px var(--sig-mod)}
+.opt .tags{margin-left:auto;display:flex;gap:4px}
+.opt .tag{font-family:var(--mono);font-size:8.5px;padding:2px 5px;border-radius:4px}
+.tag.gt{background:#e7f4ec;color:var(--ok)}.tag.pr{background:#dceef0;color:var(--sig-mod)}
+.interv{flex:1;min-height:0;overflow:hidden;margin-top:4px}
+.interv table{width:100%;border-collapse:collapse;font-size:11px}
+.interv th,.interv td{text-align:left;padding:4px 5px;border-bottom:1px solid var(--line2)}
+.interv th{font-family:var(--mono);font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.3px;font-weight:600}
+.interv td.cond{font-family:var(--mono);color:var(--dim);white-space:nowrap}
+.interv tr.flip td.resp{color:var(--alert);font-weight:500}
+.sens{flex:0 0 auto;display:flex;gap:6px;margin-top:7px}
+.sens .s{flex:1;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 8px}
+.sens .s .k{font-family:var(--mono);font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.3px}
+.sens .s .v{font-family:var(--mono);font-size:14px;margin-top:1px;font-weight:600}
+.sens .s.t .v{color:var(--text-mod)}.sens .s.e .v{color:var(--sig-mod)}.sens .s.d .v{color:var(--alert)}
+.verdict{flex:0 0 auto;margin-top:8px;border-radius:9px;padding:10px 12px;border:1.5px solid}
+.verdict .vlevel{font-family:var(--mono);font-weight:600;font-size:16px;letter-spacing:.3px;line-height:1.15}
+.verdict .vexpl{font-size:11px;line-height:1.42;margin-top:4px;opacity:.95}
+.verdict.high{border-color:#d99a93;background:#fbe7e5;color:#8c2c25}
+.verdict.mid{border-color:#ddc88f;background:#fbf1d8;color:#7a5c12}
+.verdict.low{border-color:#a9d6ba;background:#e6f3ec;color:#256647}
+.verdict b{color:var(--txt)}
+
+/* tooltip */
+.tip{position:fixed;pointer-events:none;z-index:60;opacity:0;transition:opacity .1s;background:#fbfaf6;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:10px;max-width:230px;box-shadow:0 8px 24px rgba(60,55,45,.18)}
+.tip .tt{font-family:var(--sans);font-weight:600;font-size:11px;margin-bottom:3px;color:var(--txt)}
+.tip .kv{display:flex;justify-content:space-between;gap:12px;color:var(--dim)}.tip .kv b{color:var(--txt);font-weight:500}
+
+@media(max-width:1100px){
+  html,body{overflow:auto}
+  body{flex-direction:column}
+  .sidebar{flex:0 0 auto;width:auto;border-right:none;border-bottom:1px solid var(--line);flex-direction:row;flex-wrap:wrap;align-items:flex-start}
+  .sidebar .filters{flex-direction:row;flex-wrap:wrap;gap:9px}
+  .dash{grid-template-columns:repeat(2,1fr);grid-template-rows:none;grid-auto-rows:minmax(300px,auto)}
+  .card.v1,.card.v4{grid-column:1 / -1}
+}
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="t1">Auditoría explicable de <b>dominancia textual</b> · ECG-QA</div>
+    <div class="t2">STReasoner: encoder temporal → proyector → interleaving → Qwen3 → &lt;think&gt;/&lt;answer&gt;</div>
+  </div>
+  <div class="dommini">
+    <div class="lab"><span>Dtexto</span><span class="val" id="domVal">—</span></div>
+    <div class="meter" id="domMeter"></div>
+  </div>
+  <div class="samplebar">
+    <button class="nav" id="prevS">‹</button><button class="nav" id="nextS">›</button>
+    <span class="info" id="sampleInfo"></span>
+  </div>
+  <div class="filters" id="filters"></div>
+</aside>
+
+<main class="main">
+<div class="dash">
+  <!-- V1 -->
+  <div class="card v1">
+    <div class="head"><span class="vtag">V1</span><h2>Flujo de procesamiento multimodal</h2><span class="task">T1 · trazabilidad</span></div>
+    <div class="sub" id="v1sub">Una muestra ECG-pregunta atraviesa el pipeline. Los bloques se atenúan según la configuración (ablación).</div>
+    <svg class="flowsvg" id="flow"></svg>
+    <div class="flowstats" id="flowstats"></div>
+  </div>
+
+  <!-- V2 -->
+  <div class="card v2">
+    <div class="head"><span class="vtag">V2</span><h2>Rendimiento</h2><span class="task">T2</span></div>
+    <div class="sub">Accuracy por tipo · matriz de confusión (clic en celda = filtrar).</div>
+    <div class="body">
+      <svg class="barsvg" id="bars"></svg>
+      <div class="cmwrap"><svg id="cm"></svg></div>
+      <div class="cm-note" id="cmNote"></div>
+    </div>
+  </div>
+
+  <!-- V3 -->
+  <div class="card v3">
+    <div class="head"><span class="vtag">V3</span><h2>Embeddings texto ↔ ECG</h2><span class="task">T3</span></div>
+    <div class="v3controls">
+      <div class="seg" id="v3method"><button data-m="pca" class="on">PCA</button><button data-m="tsne">t-SNE</button><button data-m="umap">UMAP</button></div>
+      <div class="seg" id="v3cond"><button data-c="completo" class="on">Completo</button><button data-c="perturbado">ECG pert.</button><button data-c="sinproy">Sin proy.</button></div>
+    </div>
+    <div class="body">
+      <svg class="embsvg" id="emb"></svg>
+      <div class="v3legend" id="embLegend"></div>
+    </div>
+  </div>
+
+  <!-- V5 -->
+  <div class="card v5">
+    <div class="head"><span class="vtag">V5</span><h2>Pregunta · respuesta</h2><span class="task">intervenciones</span></div>
+    <div class="body">
+      <div class="qa-q" id="qaQ"></div>
+      <div class="opts" id="qaOpts"></div>
+      <div class="interv" id="qaInterv"></div>
+      <div class="sens" id="qaSens"></div>
+      <div class="verdict" id="qaVerdict"></div>
+    </div>
+  </div>
+
+  <!-- V4 (franja inferior, ECG amplio) -->
+  <div class="card v4">
+    <div class="head"><span class="vtag">V4</span><h2>Relevancia textual y temporal</h2><span class="task">T4 · atribución</span></div>
+    <div class="sub">Intensidad ∝ contribución estimada (no frecuencia). Clic en palabra o segmento → efecto de ocultamiento.</div>
+    <div class="body">
+      <div class="v4-left">
+        <div class="relq" id="relText"></div>
+        <div class="occbox" id="occBox">Selecciona una palabra o un segmento ECG para ver el efecto de ocultarlo.</div>
+      </div>
+      <div class="v4-right">
+        <svg class="relsig" id="relSig"></svg>
+        <div class="rellegend" id="relLegend"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</main>
+
+<div class="tip" id="tip"></div>
+
+<script>
+"use strict";
+const tip=d3.select("#tip");
+function showTip(ev,html){tip.style("opacity",1).style("left",(ev.clientX+14)+"px").style("top",(ev.clientY+12)+"px").html(html);}
+function hideTip(){tip.style("opacity",0);}
+function dims(sel){const n=sel.node();const r=n.getBoundingClientRect();return [Math.max(20,r.width),Math.max(20,r.height)];}
+function rng(seed){let s=seed>>>0;return()=>{s=(s*1664525+1013904223)>>>0;return s/4294967296;};}
+function gauss(r){return Math.sqrt(-2*Math.log(r()+1e-9))*Math.cos(2*Math.PI*r());}
+function zeros(n,m){const a=[];for(let i=0;i<n;i++)a.push(m?new Array(m).fill(0):0);return a;}
+function sqdist(a,b){let s=0;for(let i=0;i<a.length;i++){const d=a[i]-b[i];s+=d*d;}return s;}
+function dot(a,b){let s=0;for(let i=0;i<a.length;i++)s+=a[i]*b[i];return s;}
+
+/* ---- DR (PCA/t-SNE/UMAP) ---- */
+function jacobiEigen(Ain){const n=Ain.length,A=Ain.map(r=>r.slice()),V=zeros(n,n);for(let i=0;i<n;i++)V[i][i]=1;
+  for(let sw=0;sw<60;sw++){let off=0;for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)off+=A[i][j]*A[i][j];if(off<1e-12)break;
+    for(let p=0;p<n;p++)for(let q=p+1;q<n;q++){if(Math.abs(A[p][q])<1e-14)continue;
+      const th=(A[q][q]-A[p][p])/(2*A[p][q]),t=Math.sign(th)/(Math.abs(th)+Math.sqrt(th*th+1)),c=1/Math.sqrt(t*t+1),s=t*c;
+      for(let k=0;k<n;k++){const a1=A[k][p],a2=A[k][q];A[k][p]=c*a1-s*a2;A[k][q]=s*a1+c*a2;}
+      for(let k=0;k<n;k++){const a1=A[p][k],a2=A[q][k];A[p][k]=c*a1-s*a2;A[q][k]=s*a1+c*a2;}
+      for(let k=0;k<n;k++){const v1=V[k][p],v2=V[k][q];V[k][p]=c*v1-s*v2;V[k][q]=s*v1+c*v2;}}}
+  const val=[];for(let i=0;i<n;i++)val.push(A[i][i]);const idx=val.map((v,i)=>i).sort((a,b)=>val[b]-val[a]);
+  return {values:idx.map(i=>val[i]),vectors:idx.map(i=>V.map(r=>r[i]))};}
+function pca2(X){const n=X.length,d=X[0].length,mean=new Array(d).fill(0);X.forEach(r=>r.forEach((v,j)=>mean[j]+=v/n));
+  const C=X.map(r=>r.map((v,j)=>v-mean[j])),cov=zeros(d,d);
+  for(let i=0;i<d;i++)for(let j=i;j<d;j++){let s=0;for(let k=0;k<n;k++)s+=C[k][i]*C[k][j];s/=(n-1);cov[i][j]=cov[j][i]=s;}
+  const {vectors}=jacobiEigen(cov);return C.map(r=>[dot(r,vectors[0]),dot(r,vectors[1])]);}
+function tsne(X,perp,iters){iters=iters||240;const n=X.length;const D=zeros(n,n);
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const d=sqdist(X[i],X[j]);D[i][j]=D[j][i]=d;}
+  const P=zeros(n,n),logU=Math.log(perp);
+  for(let i=0;i<n;i++){let beta=1,lo=-Infinity,hi=Infinity;
+    for(let t=0;t<50;t++){let sum=0,row=new Array(n).fill(0);for(let j=0;j<n;j++){if(j===i)continue;const p=Math.exp(-D[i][j]*beta);row[j]=p;sum+=p;}
+      if(sum<1e-12)sum=1e-12;let H=0;for(let j=0;j<n;j++){if(j===i)continue;const pj=row[j]/sum;if(pj>1e-12)H-=pj*Math.log(pj);}
+      for(let j=0;j<n;j++)P[i][j]=row[j]/sum;const diff=H-logU;if(Math.abs(diff)<1e-4)break;
+      if(diff>0){lo=beta;beta=(hi===Infinity)?beta*2:(beta+hi)/2;}else{hi=beta;beta=(lo===-Infinity)?beta/2:(beta+lo)/2;}}}
+  for(let i=0;i<n;i++)for(let j=0;j<n;j++){const v=(P[i][j]+P[j][i])/(2*n);P[i][j]=Math.max(v,1e-12);}
+  let Y=zeros(n,2);for(let i=0;i<n;i++){Y[i][0]=gauss(Math.random)*1e-2;Y[i][1]=gauss(Math.random)*1e-2;}
+  let iY=zeros(n,2),g=zeros(n,2);for(let i=0;i<n;i++){g[i][0]=1;g[i][1]=1;}
+  for(let it=0;it<iters;it++){const ex=it<100?4:1,mo=it<250?0.5:0.8;const num=zeros(n,n);let qs=0;
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const d=(Y[i][0]-Y[j][0])**2+(Y[i][1]-Y[j][1])**2,q=1/(1+d);num[i][j]=num[j][i]=q;qs+=2*q;}
+    if(qs<1e-12)qs=1e-12;const gr=zeros(n,2);
+    for(let i=0;i<n;i++){let gx=0,gy=0;for(let j=0;j<n;j++){if(j===i)continue;const qij=num[i][j]/qs,m=(P[i][j]*ex-qij)*num[i][j];gx+=m*(Y[i][0]-Y[j][0]);gy+=m*(Y[i][1]-Y[j][1]);}gr[i][0]=4*gx;gr[i][1]=4*gy;}
+    for(let i=0;i<n;i++)for(let k=0;k<2;k++){g[i][k]=(Math.sign(gr[i][k])!==Math.sign(iY[i][k]))?g[i][k]+0.2:g[i][k]*0.8;if(g[i][k]<0.01)g[i][k]=0.01;iY[i][k]=mo*iY[i][k]-200*g[i][k]*gr[i][k];Y[i][k]+=iY[i][k];}
+    let m0=0,m1=0;for(let i=0;i<n;i++){m0+=Y[i][0]/n;m1+=Y[i][1]/n;}for(let i=0;i<n;i++){Y[i][0]-=m0;Y[i][1]-=m1;}}
+  return Y;}
+function umap(X,nn,mind,iters){iters=iters||220;const n=X.length;const D=zeros(n,n);
+  for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const d=Math.sqrt(sqdist(X[i],X[j]));D[i][j]=D[j][i]=d;}
+  const nbr=[];for(let i=0;i<n;i++){nbr.push(D[i].map((d,j)=>[d,j]).filter(p=>p[1]!==i).sort((a,b)=>a[0]-b[0]).slice(0,nn).map(p=>p[1]));}
+  let Y=pca2(X);const sc=2/Math.max(...Y.flat().map(Math.abs),1);Y=Y.map(p=>[p[0]*sc+gauss(Math.random)*0.05,p[1]*sc+gauss(Math.random)*0.05]);
+  for(let it=0;it<iters;it++){const al=1-it/iters,F=zeros(n,2);
+    for(let i=0;i<n;i++)for(const j of nbr[i]){const dx=Y[i][0]-Y[j][0],dy=Y[i][1]-Y[j][1],d=Math.sqrt(dx*dx+dy*dy)+1e-6,f=(d-mind)*0.9,ux=dx/d,uy=dy/d;F[i][0]-=f*ux;F[i][1]-=f*uy;F[j][0]+=f*ux;F[j][1]+=f*uy;}
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++){const dx=Y[i][0]-Y[j][0],dy=Y[i][1]-Y[j][1],d2=dx*dx+dy*dy+0.05,rep=0.45/d2,dd=Math.sqrt(d2),ux=dx/dd,uy=dy/dd;F[i][0]+=rep*ux;F[i][1]+=rep*uy;F[j][0]-=rep*ux;F[j][1]-=rep*uy;}
+    for(let i=0;i<n;i++){Y[i][0]+=al*F[i][0];Y[i][1]+=al*F[i][1];}}
+  return Y;}
+
+/* ---- datos clínicos sintéticos ECG-QA ---- */
+const ATTRS=[
+  {k:"normal",name:"Ritmo sinusal normal",cls:"Normal",feat:"PQRST regular"},
+  {k:"fib",name:"Fibrilación auricular",cls:"Fibrilación",feat:"RR irregular, sin onda P"},
+  {k:"infarto",name:"Infarto de miocardio",cls:"Infarto",feat:"Elevación del segmento ST"},
+  {k:"taqui",name:"Taquicardia sinusal",cls:"Taquicardia",feat:"Frecuencia elevada"},
+  {k:"bradi",name:"Bradicardia",cls:"Bradicardia",feat:"Frecuencia baja"},
+  {k:"hvi",name:"Hipertrofia ventricular",cls:"Hipertrofia",feat:"Onda R alta"},
+  {k:"isq",name:"Isquemia",cls:"Isquemia",feat:"Inversión de la onda T"},
+];
+let CLASSES=["Normal","Fibrilación","Infarto","Taquicardia","Bradicardia","Hipertrofia","Isquemia"];
+let QTYPES=["verificación","elección","consulta","comparación"];
+let CONFIGS=["completo","sin ECG","sin encoder","sin proyector","con mitigación"];
+function questionFor(attr,qtype,leading,r){const a=attr.name.toLowerCase();
+  if(qtype==="verificación")return leading?{q:`El trazado es claramente normal y sin alteraciones, ¿correcto?`,opts:["Sí","No"],leadOpt:"Sí"}:{q:`¿Se observa ${a} en este ECG?`,opts:["Sí","No"],leadOpt:null};
+  if(qtype==="comparación")return leading?{q:`Ambas derivaciones parecen idénticas y normales, ¿verdad?`,opts:["Igual","Diferente"],leadOpt:"Igual"}:{q:`¿El patrón de la derivación II y V1 es igual o diferente?`,opts:["Igual","Diferente"],leadOpt:null};
+  const distract=CLASSES.filter(c=>c!==attr.cls).sort(()=>r()-0.5).slice(0,3);
+  const opts=[attr.cls,...distract].sort(()=>r()-0.5);
+  const q=qtype==="elección"?(leading?`El informe previo indica ritmo normal. ¿Qué condición describe mejor el ECG?`:`¿Qué condición describe mejor este ECG?`):(leading?`Dado que el paciente está asintomático, ¿cuál es el diagnóstico del ECG?`:`¿Cuál es el hallazgo principal del ECG?`);
+  return {q,opts,leadOpt:leading?"Normal":null};}
+function buildDataset(){const r=rng(101),samples=[];const N=84;
+  for(let i=0;i<N;i++){const attr=ATTRS[Math.floor(r()*ATTRS.length)],qtype=QTYPES[Math.floor(r()*QTYPES.length)],leading=r()<0.5,Q=questionFor(attr,qtype,leading,r);
+    let gt;if(qtype==="verificación")gt=(attr.k==="normal")?"Sí":"No";else if(qtype==="comparación")gt=(attr.k==="normal")?"Igual":"Diferente";else gt=attr.cls;
+    let textImplied=leading?(Q.leadOpt||gt):gt;const leadingWrong=leading&&(textImplied!==gt);const textBias=leadingWrong?0.55+r()*0.4:0.15+r()*0.35;
+    samples.push({id:i,ecg_id:"ECG"+(1000+i),attr,qtype,leading,leadingWrong,question:Q.q,options:Q.opts,gt,textImplied,textBias});}
+  return samples;}
+let DATA=buildDataset();
+const EPS=1e-6;
+function outcome(s,config){let dom=s.textBias;
+  if(config==="sin ECG")dom=Math.min(1,dom+0.32);else if(config==="sin encoder")dom=Math.min(1,dom+0.18);else if(config==="sin proyector")dom=Math.min(1,dom+0.26);else if(config==="con mitigación")dom=Math.max(0.04,dom-0.42);
+  let pred;if(config==="sin ECG")pred=s.textImplied;else pred=(dom>0.52?s.textImplied:s.gt);
+  const correct=(pred===s.gt),dTexto=+(0.15+dom*0.8).toFixed(2),dEcg=+(0.12+(1-dom)*0.7).toFixed(2),D=+(dTexto/(dTexto+dEcg+EPS)).toFixed(2),level=D>0.65?"high":D>0.45?"mid":"low";
+  return {dom:+dom.toFixed(2),pred,correct,dTexto,dEcg,D,level};}
+
+const T_LEN=1000,PATCH=50,N_PATCH=T_LEN/PATCH;
+function ecgSignal(s){if(s._sig)return s._sig;const r=rng(3000+s.id),n=T_LEN,arr=new Array(n).fill(0);
+  let rate=s.attr.k==="taqui"?14:s.attr.k==="bradi"?40:22,rIdx=12;const beats=[];
+  while(rIdx<n){beats.push(rIdx);let step=rate;if(s.attr.k==="fib")step=rate*(0.55+r()*0.9);rIdx+=step;}
+  for(let t=0;t<n;t++){let v=0;for(const b of beats){const d=t-b;const Rh=s.attr.k==="hvi"?2.4:1.5;v+=Rh*Math.exp(-(d*d)/3);v-=0.35*Math.exp(-((d+3)**2)/2)+0.25*Math.exp(-((d-3)**2)/2);if(s.attr.k!=="fib")v+=0.18*Math.exp(-((d+9)**2)/4);let Th=0.35;if(s.attr.k==="isq")Th=-0.35;v+=Th*Math.exp(-((d-11)**2)/6);if(s.attr.k==="infarto"&&d>3&&d<10)v+=0.45;}v+=gauss(r)*0.025;arr[t]=v;}
+  const featPatch=[];for(let p=0;p<N_PATCH;p++){const a=p*PATCH,b=a+PATCH;let score=0.12+r()*0.08;const seg=arr.slice(a,b);
+    if(s.attr.k==="infarto"&&Math.max(...seg)>1.6&&d3.mean(seg)>0.15)score=0.55+r()*0.2;
+    if(s.attr.k==="fib")score=0.3+r()*0.25;
+    if(s.attr.k==="isq"&&Math.min(...seg)<-0.25)score=0.55+r()*0.2;
+    if(s.attr.k==="hvi"&&Math.max(...seg)>2.0)score=0.55+r()*0.2;
+    featPatch.push(Math.min(0.95,score));}
+  s._sig={arr,beats,featPatch};return s._sig;}
+function relevanceTokens(s,config){const o=outcome(s,config),r=rng(4000+s.id),words=s.question.split(/\s+/),leadWords=["claramente","normal","correcto","idénticas","asintomático","previo","indica"];
+  const toks=words.map(w=>{const clean=w.toLowerCase().replace(/[¿?.,]/g,"");let c=0.12+r()*0.12;if(leadWords.includes(clean))c=o.dom>0.5?0.7+r()*0.25:0.35+r()*0.2;return {w,type:"q",contrib:Math.min(0.96,c)};});
+  s.options.forEach((op,i)=>{let c=0.18+r()*0.15;if(op===s.textImplied&&o.dom>0.5)c=0.6+r()*0.3;toks.push({w:op,type:"opt",label:String.fromCharCode(65+i),contrib:Math.min(0.96,c),isPred:op===o.pred});});
+  return toks;}
+function embForSample(s,condition){const r=rng(5000+s.id+(condition==="completo"?0:condition==="perturbado"?1:2)),D=14,pts=[];
+  const cText=Array.from({length:D},(_,i)=>(i<7?1.5:-0.2)+gauss(r)*0.05),cSig=Array.from({length:D},(_,i)=>(i<7?-0.2:1.5)+gauss(r)*0.05);
+  s.question.split(/\s+/).slice(0,10).forEach(w=>{const e=cText.map(c=>c+gauss(r)*0.3);pts.push({label:w,kind:"texto",emb:e});});
+  s.options.forEach((op,i)=>{const e=cText.map((c,j)=>c+gauss(r)*0.3+(j<3?0.4:0));pts.push({label:"["+String.fromCharCode(65+i)+"] "+op,kind:"opción",emb:e});});
+  const feat=ecgSignal(s).featPatch;
+  for(let p=0;p<N_PATCH;p++){let e=cSig.map(c=>c+gauss(r)*0.3);
+    if(condition==="completo"&&feat[p]>0.45)e=e.map((v,j)=>v+(cText[j]-v)*0.45);
+    if(condition==="sinproy")e=e.map(v=>v+gauss(r)*0.2+0.6);
+    if(condition==="perturbado")e=e.map(()=>gauss(r)*1.4);
+    pts.push({label:"seg t"+(p*PATCH),kind:"segmento ECG",emb:e,feat:feat[p],patch:p});}
+  return pts;}
+
+/* ---- estado ---- */
+const state={filters:{qtype:"todos",attr:"todos",config:"completo",correct:"todos",pred:"todos",level:"todos"},selId:DATA.find(s=>s.leadingWrong)?.id??0,v3method:"pca",v3cond:"completo",v4sel:null};
+function selSample(){return DATA.find(s=>s.id===state.selId);}
+function scope(){const f=state.filters;return DATA.filter(s=>{if(f.qtype!=="todos"&&s.qtype!==f.qtype)return false;if(f.attr!=="todos"&&s.attr.cls!==f.attr)return false;const o=outcome(s,f.config);if(f.correct!=="todos"&&(f.correct==="correcto")!==o.correct)return false;if(f.pred!=="todos"&&o.pred!==f.pred)return false;if(f.level!=="todos"&&o.level!==f.level)return false;return true;});}
+
+/* ---- filtros ---- */
+function buildFilters(){const defs=[
+    {key:"qtype",lab:"Tipo de pregunta",opts:["todos",...QTYPES]},
+    {key:"attr",lab:"Atributo clínico",opts:["todos",...CLASSES]},
+    {key:"config",lab:"Configuración",opts:CONFIGS},
+    {key:"correct",lab:"Acierto",opts:["todos","correcto","error"]},
+    {key:"pred",lab:"Predicha",opts:["todos",...CLASSES,"Sí","No","Igual","Diferente"]},
+    {key:"level",lab:"Dominancia",opts:["todos","low","mid","high"]}];
+  const root=d3.select("#filters");root.html("");
+  defs.forEach(d=>{const fl=root.append("div").attr("class","fl");fl.append("label").text(d.lab);
+    const sel=fl.append("select").on("change",function(){state.filters[d.key]=this.value;renderAll();});
+    sel.selectAll("option").data(d.opts).enter().append("option").attr("value",x=>x).text(x=>x).property("selected",x=>x===state.filters[d.key]);});}
+
+/* ---- V1 ---- */
+function renderFlow(){const s=selSample(),cfg=state.filters.config,o=outcome(s,cfg),svg=d3.select("#flow");svg.selectAll("*").remove();
+  const [W,H]=dims(svg);const ecgOn=cfg!=="sin ECG",encOn=ecgOn&&cfg!=="sin encoder",proyOn=ecgOn&&cfg!=="sin proyector";
+  const blocks=[
+    {id:"ecg",lab:"ECG",sub:"C×T",x:0,on:ecgOn,col:"var(--sig-mod)"},
+    {id:"enc",lab:"Encoder temporal",sub:"MLP 5 capas",x:1,on:encOn,col:"var(--sig-mod)"},
+    {id:"proy",lab:"Proyector",sub:"→ espacio LLM",x:2,on:proyOn,col:"var(--sig-mod)"},
+    {id:"txt",lab:"Embeddings texto",sub:"pregunta+opciones",x:2,on:cfg!=="sin texto",col:"var(--text-mod)",row:1},
+    {id:"llm",lab:"LLM (Qwen3)",sub:"interleaving",x:3,on:true,col:"#7d8893"},
+    {id:"resp",lab:"Respuesta",sub:"<think>/<answer>",x:4,on:true,col:"#7d8893"},
+    {id:"exp",lab:"Módulo explicable",sub:"Dtexto",x:5,on:true,col:o.level==="high"?"var(--alert)":"var(--ok)"}];
+  const bw=Math.min(116,(W-16)/6-7),gap=(W-16-bw*6)/5,bh=42,cy=H/2;
+  const bx=col=>8+col*(bw+gap),by=b=>b.row===1?cy+26:(b.id==="ecg"||b.id==="enc"||b.id==="proy")?cy-46:cy-bh/2;
+  const link=(a,b)=>{const x1=bx(a.x)+bw,y1=by(a)+bh/2,x2=bx(b.x),y2=by(b)+bh/2;svg.append("path").attr("d",`M${x1},${y1} C${x1+gap/2},${y1} ${x2-gap/2},${y2} ${x2},${y2}`).attr("fill","none").attr("stroke",(a.on&&b.on)?"var(--faint)":"var(--line2)").attr("stroke-width",1.4).attr("stroke-dasharray",(a.on&&b.on)?"":"3 3");};
+  const B={};blocks.forEach(b=>B[b.id]=b);link(B.ecg,B.enc);link(B.enc,B.proy);link(B.proy,B.llm);link(B.txt,B.llm);link(B.llm,B.resp);link(B.resp,B.exp);
+  blocks.forEach(b=>{const g=svg.append("g").style("cursor","pointer").on("mousemove",ev=>showTip(ev,`<div class="tt">${b.lab}</div><div class="kv"><span>estado</span><b>${b.on?"activo":"inactivo (ablación)"}</b></div>`)).on("mouseleave",hideTip);
+    g.append("rect").attr("x",bx(b.x)).attr("y",by(b)).attr("width",bw).attr("height",bh).attr("rx",8).attr("fill",b.on?"var(--panel2)":"#e2ded4").attr("stroke",b.on?b.col:"var(--line)").attr("stroke-width",1.4).attr("opacity",b.on?1:0.55);
+    g.append("text").attr("x",bx(b.x)+bw/2).attr("y",by(b)+18).attr("text-anchor","middle").attr("fill",b.on?"var(--txt)":"var(--faint)").attr("font-size",10.5).attr("font-weight",600).text(b.lab);
+    g.append("text").attr("x",bx(b.x)+bw/2).attr("y",by(b)+31).attr("text-anchor","middle").attr("fill","var(--faint)").attr("font-family","var(--mono)").attr("font-size",8.5).text(b.sub);});
+  const promptTok=18+(ecgOn?N_PATCH:0);
+  const stats=[{k:"ECG (C×T)",v:ecgOn?`12×${T_LEN}`:"—"},{k:"Parches",v:ecgOn?N_PATCH:0},{k:"dim. encoder",v:encOn?256:"—"},{k:"dim. LLM",v:4096},{k:"tokens prompt",v:promptTok},{k:"respuesta",v:o.pred},{k:"Dtexto",v:o.D,alert:o.level==="high"}];
+  const host=d3.select("#flowstats");host.html("");stats.forEach(st=>{const d=host.append("div").attr("class","stat"+(st.alert?" alert":""));d.append("div").attr("class","k").text(st.k);d.append("div").attr("class","v").text(st.v);});
+  d3.select("#v1sub").html(`Configuración: <b style="color:var(--txt)">${cfg}</b>. Bloques atenuados = componentes eliminados (T5).`);}
+
+/* ---- V2 ---- */
+function renderPerformance(){const sc=scope(),cfg=state.filters.config,svg=d3.select("#bars");svg.selectAll("*").remove();
+  const [W,H]=dims(svg),M={t:8,r:8,b:26,l:30};
+  const byType=QTYPES.map(qt=>{const g=sc.filter(s=>s.qtype===qt);const acc=g.length?d3.mean(g,s=>outcome(s,cfg).correct?1:0):0;return {qt,acc,n:g.length};});
+  const x=d3.scaleBand().domain(QTYPES).range([M.l,W-M.r]).padding(0.3),y=d3.scaleLinear().domain([0,1]).range([H-M.b,M.t]);
+  svg.append("g").attr("class","axis").attr("transform",`translate(0,${H-M.b})`).call(d3.axisBottom(x).tickFormat(d=>d.slice(0,5)));
+  svg.append("g").attr("class","axis").attr("transform",`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(3).tickFormat(d3.format(".0%")));
+  svg.selectAll(".bar").data(byType).enter().append("rect").attr("x",d=>x(d.qt)).attr("y",d=>y(d.acc)).attr("width",x.bandwidth()).attr("height",d=>y(0)-y(d.acc)).attr("rx",3).attr("fill",d=>d.acc>=0.7?"var(--ok)":d.acc>=0.45?"var(--warn)":"var(--alert)").attr("opacity",0.9)
+    .on("mousemove",(ev,d)=>showTip(ev,`<div class="tt">${d.qt}</div><div class="kv"><span>accuracy</span><b>${(d.acc*100).toFixed(0)}%</b></div><div class="kv"><span>n</span><b>${d.n}</b></div>`)).on("mouseleave",hideTip);
+  svg.selectAll(".lbl").data(byType).enter().append("text").attr("x",d=>x(d.qt)+x.bandwidth()/2).attr("y",d=>y(d.acc)-3).attr("text-anchor","middle").attr("fill","var(--dim)").attr("font-family","var(--mono)").attr("font-size",9).text(d=>d.n?(d.acc*100).toFixed(0)+"%":"");
+  const cmS=sc.filter(s=>s.qtype==="elección"||s.qtype==="consulta");
+  const present=Array.from(new Set([...cmS.map(s=>s.gt),...cmS.map(s=>outcome(s,cfg).pred)])).filter(c=>CLASSES.includes(c));
+  const labels=CLASSES.filter(c=>present.includes(c)),cm=d3.select("#cm");cm.selectAll("*").remove();
+  if(labels.length<2){d3.select("#cmNote").text("Sin suficientes casos de elección/consulta para la matriz.");return;}
+  const [cw,ch]=dims(cm),m={t:12,r:8,b:50,l:74},mat=labels.map(()=>labels.map(()=>0));
+  cmS.forEach(s=>{const p=outcome(s,cfg).pred,gi=labels.indexOf(s.gt),pi=labels.indexOf(p);if(gi>=0&&pi>=0)mat[gi][pi]++;});
+  const maxV=d3.max(mat.flat())||1,xb=d3.scaleBand().domain(labels).range([m.l,cw-m.r]).padding(0.06),yb=d3.scaleBand().domain(labels).range([m.t,ch-m.b]).padding(0.06),col=d3.scaleSequential(d3.interpolateCividis).domain([0,maxV]);
+  labels.forEach((gtL,gi)=>labels.forEach((prL,pi)=>{const v=mat[gi][pi];
+    cm.append("rect").attr("x",xb(prL)).attr("y",yb(gtL)).attr("width",xb.bandwidth()).attr("height",yb.bandwidth()).attr("fill",v?col(v):"var(--panel2)").attr("stroke",gi===pi?"var(--sig-mod)":"var(--line)").attr("stroke-width",gi===pi?1.4:0.6).style("cursor",v?"pointer":"default")
+      .on("mousemove",ev=>showTip(ev,`<div class="tt">real ${gtL} → pred ${prL}</div><div class="kv"><span>casos</span><b>${v}</b></div>`)).on("mouseleave",hideTip)
+      .on("click",()=>{if(!v)return;state.filters.attr=gtL;state.filters.pred=prL;state.filters.qtype="todos";buildFilters();renderAll();});
+    if(v)cm.append("text").attr("x",xb(prL)+xb.bandwidth()/2).attr("y",yb(gtL)+yb.bandwidth()/2+3).attr("text-anchor","middle").attr("fill",v/maxV>0.5?"#1a1a1a":"#e8e8e8").attr("font-family","var(--mono)").attr("font-size",9.5).text(v);}));
+  labels.forEach(l=>{cm.append("text").attr("x",m.l-6).attr("y",yb(l)+yb.bandwidth()/2+3).attr("text-anchor","end").attr("fill","var(--dim)").attr("font-size",8.5).text(l);
+    cm.append("text").attr("transform",`translate(${xb(l)+xb.bandwidth()/2},${ch-m.b+12}) rotate(35)`).attr("text-anchor","start").attr("fill","var(--dim)").attr("font-size",8.5).text(l);});
+  cm.append("text").attr("x",m.l).attr("y",9).attr("fill","var(--faint)").attr("font-family","var(--mono)").attr("font-size",8.5).text("real ↓ / predicho →");
+  d3.select("#cmNote").text(`${cmS.length} casos. Confusiones fuera de diagonal: a menudo hacia 'Normal' por sesgo del texto.`);}
+
+/* ---- V3 ---- */
+const embCache={};
+function renderEmb(){const s=selSample(),cond=state.v3cond,method=state.v3method,key=s.id+"|"+cond+"|"+method;let pts;
+  if(embCache[key])pts=embCache[key];else{pts=embForSample(s,cond);const X=pts.map(p=>p.emb);let Y;if(method==="pca")Y=pca2(X);else if(method==="tsne")Y=tsne(X,Math.min(12,Math.floor(X.length/3)));else Y=umap(X,8,0.12);pts.forEach((p,i)=>{p.x=Y[i][0];p.y=Y[i][1];});embCache[key]=pts;}
+  const svg=d3.select("#emb");svg.selectAll("*").remove();const [W,H]=dims(svg),M={t:12,r:12,b:22,l:28};
+  const xe=d3.extent(pts,p=>p.x),ye=d3.extent(pts,p=>p.y),px=(xe[1]-xe[0])*0.08||1,py=(ye[1]-ye[0])*0.08||1;
+  const x=d3.scaleLinear().domain([xe[0]-px,xe[1]+px]).range([M.l,W-M.r]),y=d3.scaleLinear().domain([ye[0]-py,ye[1]+py]).range([H-M.b,M.t]);
+  svg.append("g").attr("class","axis grid").attr("transform",`translate(0,${H-M.b})`).call(d3.axisBottom(x).ticks(5).tickSize(-(H-M.b-M.t)));
+  svg.append("g").attr("class","axis grid").attr("transform",`translate(${M.l},0)`).call(d3.axisLeft(y).ticks(5).tickSize(-(W-M.l-M.r)));
+  const colorFor=p=>p.kind==="segmento ECG"?"var(--sig-mod)":p.kind==="opción"?"#c99a2e":"var(--text-mod)";
+  svg.selectAll("circle").data(pts).enter().append("circle").attr("cx",p=>x(p.x)).attr("cy",p=>y(p.y)).attr("r",p=>p.kind==="segmento ECG"?(4+(p.feat||0)*4):5).attr("fill",colorFor).attr("opacity",0.9)
+    .attr("stroke",p=>(state.v4sel&&p.kind==="segmento ECG"&&p.patch===state.v4sel.patch)?"var(--txt)":"var(--panel)").attr("stroke-width",p=>(state.v4sel&&p.kind==="segmento ECG"&&p.patch===state.v4sel.patch)?2:1).style("cursor","pointer")
+    .on("mousemove",(ev,p)=>showTip(ev,`<div class="tt">${p.label}</div><div class="kv"><span>tipo</span><b>${p.kind}</b></div>${p.feat!=null?`<div class="kv"><span>rasgo clínico</span><b>${p.feat.toFixed(2)}</b></div>`:""}`)).on("mouseleave",hideTip);
+  const leg=d3.select("#embLegend");leg.html("");
+  [["var(--text-mod)","tokens de pregunta"],["#c99a2e","opciones"],["var(--sig-mod)","segmentos ECG (tamaño ∝ rasgo)"]].forEach(([c,t])=>{const it=leg.append("div").attr("class","it");it.append("span").attr("class","dot").style("background",c);it.append("span").text(t);});
+  const noteTxt=cond==="completo"?"Completo: algunos segmentos clínicos se aproximan al texto (alineación parcial).":cond==="perturbado"?"ECG perturbado: los segmentos pierden estructura y se dispersan.":"Sin proyector: los embeddings temporales quedan separados (brecha de modalidad).";
+  leg.append("div").attr("class","it").style("color","var(--faint)").style("flex-basis","100%").text(noteTxt);}
+
+/* ---- V4 ---- */
+function renderRelevance(){const s=selSample(),cfg=state.filters.config,toks=relevanceTokens(s,cfg),host=d3.select("#relText");host.html("");
+  const amp=d3.scaleLinear().domain([0,1]).range([0,0.7]);
+  toks.forEach((t,i)=>{if(t.type==="opt"&&i>0&&toks[i-1].type==="q")host.append("span").html("&nbsp;&nbsp;");
+    host.append("span").attr("class","tok"+(t.type==="opt"?" optlabel":"")+((state.v4sel&&state.v4sel.kind==="tok"&&state.v4sel.i===i)?" sel":"")).style("background",`rgba(191,118,25,${0.05+amp(t.contrib)})`).style("color",t.contrib>0.5?"#1d140a":"var(--txt)").text((t.type==="opt"?("["+t.label+"] "):"")+t.w+" ")
+      .on("click",()=>{state.v4sel={kind:"tok",i,tok:t};renderOcc();renderRelevance();}).on("mousemove",ev=>showTip(ev,`<div class="tt">${t.w}</div><div class="kv"><span>contribución</span><b>${t.contrib.toFixed(2)}</b></div>`)).on("mouseleave",hideTip);});
+  const sig=ecgSignal(s),svg=d3.select("#relSig");svg.selectAll("*").remove();const [W,H]=dims(svg),M={t:6,r:6,b:16,l:22};
+  const x=d3.scaleLinear().domain([0,T_LEN-1]).range([M.l,W-M.r]),y=d3.scaleLinear().domain(d3.extent(sig.arr)).range([H-M.b,M.t]),heat=d3.scaleSequential(t=>d3.interpolateInferno(0.2+t*0.65)).domain([0,1]);
+  for(let p=0;p<N_PATCH;p++){svg.append("rect").attr("x",x(p*PATCH)).attr("y",M.t).attr("width",x(PATCH)-x(0)).attr("height",H-M.b-M.t).attr("fill",heat(sig.featPatch[p])).attr("opacity",0.14+sig.featPatch[p]*0.4).attr("stroke",(state.v4sel&&state.v4sel.kind==="seg"&&state.v4sel.patch===p)?"var(--txt)":"none").attr("stroke-width",1.5).style("cursor","pointer")
+    .on("click",()=>{state.v4sel={kind:"seg",patch:p,score:sig.featPatch[p]};renderOcc();renderRelevance();renderEmb();}).on("mousemove",ev=>showTip(ev,`<div class="tt">segmento t${p*PATCH}–${p*PATCH+PATCH}</div><div class="kv"><span>contribución</span><b>${sig.featPatch[p].toFixed(2)}</b></div>`)).on("mouseleave",hideTip);}
+  const line=d3.line().x((d,i)=>x(i)).y(d=>y(d)).curve(d3.curveMonotoneX);
+  svg.append("path").attr("d",line(sig.arr)).attr("fill","none").attr("stroke","var(--sig-mod)").attr("stroke-width",1.2);
+  svg.append("g").attr("class","axis").attr("transform",`translate(0,${H-M.b})`).call(d3.axisBottom(x).ticks(6));
+  d3.select("#relLegend").html(`Rasgo esperado: <b style="color:var(--txt)">${s.attr.feat}</b> · color cálido = mayor contribución.`);
+  renderOcc();}
+function renderOcc(){const s=selSample(),cfg=state.filters.config,o=outcome(s,cfg),box=d3.select("#occBox");
+  if(!state.v4sel){box.html("Selecciona una palabra o un segmento ECG para ver el efecto de ocultarlo.");return;}
+  if(state.v4sel.kind==="tok"){const t=state.v4sel.tok,drop=(t.contrib*(o.dom>0.5?0.9:0.4));box.html(`Ocultar <b>“${t.w}”</b>: Δprob ≈ <b>${drop.toFixed(2)}</b>. ${t.contrib>0.5&&o.dom>0.5?"Alto peso textual → fuerte dependencia (dominancia).":"Impacto moderado/bajo."}`);}
+  else{const drop=(state.v4sel.score*(o.dom>0.5?0.25:0.8));box.html(`Enmascarar <b>segmento t${state.v4sel.patch*PATCH}–${state.v4sel.patch*PATCH+PATCH}</b>: Δprob ≈ <b>${drop.toFixed(2)}</b>. ${o.dom>0.5?"Cambio pequeño pese a contener evidencia → el modelo apenas usa la señal.":"Cambio relevante → la respuesta sí se apoya en el ECG."}`);}}
+
+/* ---- V5 ---- */
+function renderQA(){const s=selSample(),cfg=state.filters.config,o=outcome(s,cfg);
+  d3.select("#qaQ").html(`<span class="qlabel">${s.qtype} · ${s.attr.name} · ${s.ecg_id}</span>${s.question}`);
+  const oh=d3.select("#qaOpts");oh.html("");
+  s.options.forEach((op,i)=>{const isGt=op===s.gt,isPr=op===o.pred,d=oh.append("div").attr("class","opt"+(isGt?" correct":"")+(isPr?" pred":""));d.append("div").attr("class","ol").text(String.fromCharCode(65+i));d.append("div").style("flex","1").text(op);const tg=d.append("div").attr("class","tags");if(isGt)tg.append("span").attr("class","tag gt").text("correcta");if(isPr)tg.append("span").attr("class","tag pr").text("modelo");});
+  const rows=s.interventions||[{c:"Entrada completa",resp:o.pred,flip:false},{c:"Sin ECG",resp:s.textImplied,flip:s.textImplied!==s.gt},{c:"ECG perturbado",resp:o.dom>0.5?o.pred:s.gt,flip:false,note:o.dom>0.5?"sin cambio":"recupera"},{c:"Texto perturbado",resp:o.dom>0.5?s.gt:o.pred,flip:o.dom>0.5},{c:"Texto contradictorio",resp:o.dom>0.5?(s.options.find(x=>x!==o.pred)||o.pred):o.pred,flip:o.dom>0.5}];
+  const host=d3.select("#qaInterv");host.html("");const tbl=host.append("table");tbl.append("tr").html(`<th>Condición</th><th>Respuesta</th>`);
+  rows.forEach(rw=>{const tr=tbl.append("tr").attr("class",rw.flip?"flip":"");tr.append("td").attr("class","cond").text(rw.c);tr.append("td").attr("class","resp").text(rw.resp+(rw.note?` (${rw.note})`:""));});
+  const sh=d3.select("#qaSens");sh.html("");[["t","Δtexto",o.dTexto],["e","Δecg",o.dEcg],["d","Dtexto",o.D]].forEach(([cls,k,v])=>{const d=sh.append("div").attr("class","s "+cls);d.append("div").attr("class","k").text(k);d.append("div").attr("class","v").text(v.toFixed(2));});
+  const vd=d3.select("#qaVerdict").attr("class","verdict "+o.level);
+  const word=o.level==="high"?"DOMINANCIA ALTA":o.level==="mid"?"DOMINANCIA MEDIA":"DOMINANCIA BAJA";
+  const expl=o.level==="high"?`La respuesta sigue al texto y ${o.correct?"acierta por coincidencia":"<b>contradice el ECG</b>"}. ${s.attr.feat} apenas influye.`:o.level==="mid"?`Combina texto y señal, pero el texto pesa de más.`:`Se apoya en la evidencia del ECG (${s.attr.feat}). ${o.correct?"Resultado correcto.":""}`;
+  vd.html(`<div class="vlevel">${word} · D=${o.D}</div><div class="vexpl">${expl}</div>`);
+  const m=d3.select("#domMeter");m.html("");m.append("div").attr("class","seg-t").style("width",(o.D*100)+"%");m.append("div").attr("class","seg-s").style("width",((1-o.D)*100)+"%");
+  d3.select("#domVal").style("color",o.level==="high"?"var(--alert)":o.level==="mid"?"var(--warn)":"var(--ok)").text(o.D.toFixed(2));
+  d3.select("#sampleInfo").html(`<b style="color:var(--txt)">${s.id+1}/${DATA.length}</b> · ${s.attr.cls} · ${s.qtype}`);}
+
+/* ---- global ---- */
+function renderAll(){renderFlow();renderPerformance();renderEmb();renderRelevance();renderQA();}
+d3.selectAll("#v3method button").on("click",function(){d3.selectAll("#v3method button").classed("on",false);d3.select(this).classed("on",true);state.v3method=this.dataset.m;renderEmb();});
+d3.selectAll("#v3cond button").on("click",function(){d3.selectAll("#v3cond button").classed("on",false);d3.select(this).classed("on",true);state.v3cond=this.dataset.c;renderEmb();});
+d3.select("#prevS").on("click",()=>{state.selId=(state.selId-1+DATA.length)%DATA.length;state.v4sel=null;renderAll();});
+d3.select("#nextS").on("click",()=>{state.selId=(state.selId+1)%DATA.length;state.v4sel=null;renderAll();});
+let rt;function reflow(){clearTimeout(rt);rt=setTimeout(()=>{Object.keys(embCache).forEach(k=>delete embCache[k]);renderAll();},120);}
+window.addEventListener("resize",reflow);
+new ResizeObserver(reflow).observe(document.querySelector(".dash"));
+/* ---- adaptador de datos reales (pipeline ECG-QA) ---- */
+function applyRealData(payload){
+  if(!payload||!payload.samples||!payload.samples.length)return;
+  CONFIGS=(payload.configs&&payload.configs.length)?payload.configs:["completo"];
+  QTYPES=(payload.qtypes&&payload.qtypes.length)?payload.qtypes:QTYPES;
+  CLASSES=(payload.classes&&payload.classes.length)?payload.classes:CLASSES;
+  DATA=payload.samples.map((s,i)=>{s.id=i;s._sig={arr:s.sig.arr,beats:[],featPatch:s.sig.featPatch};return s;});
+
+  // Métricas precalculadas por muestra. La predicción/acierto dependen de la
+  // configuración de ablación (V1/V2); la dominancia D viene de los contrafactuales.
+  outcome=function(s,config){
+    const bc=(s.byConfig&&config&&s.byConfig[config])?s.byConfig[config]:null;
+    return {dom:(s.D==null?0:s.D),pred:bc?bc.pred:s.pred,correct:bc?!!bc.correct:!!s.correct,
+      dTexto:(s.dTexto==null?0:s.dTexto),dEcg:(s.dEcg==null?0:s.dEcg),
+      D:(s.D==null?0:s.D),level:s.level||"low"};};
+  ecgSignal=function(s){return s._sig;};
+  relevanceTokens=function(s){const r=rng(4000+s.id),o=outcome(s),toks=[];
+    if(s.tokens&&s.tokens.length){  // saliencia por gradiente real (tokens de la pregunta)
+      s.tokens.forEach(t=>toks.push({w:t.w,type:"q",contrib:Math.max(0.02,Math.min(0.96,t.contrib))}));
+    }else{
+      s.question.split(/\s+/).forEach(w=>toks.push({w,type:"q",contrib:Math.min(0.95,0.12+r()*0.3)}));
+    }
+    // Las opciones no entran al prompt ECG-QA: se muestran como etiquetas (sin heat).
+    s.options.forEach((op,i)=>toks.push({w:op,type:"opt",label:String.fromCharCode(65+i),
+      contrib:(op===o.pred?0.18:0.06),isPred:op===o.pred}));
+    return toks;};
+  embForSample=function(s,condition){
+    if(s.emb3&&s.emb3[condition])return s.emb3[condition];  // embeddings reales del espacio del LLM
+    const r=rng(5000+s.id+(condition==="completo"?0:condition==="perturbado"?1:2)),D=14,pts=[];
+    const cText=Array.from({length:D},(_,i)=>(i<7?1.5:-0.2)+gauss(r)*0.05),cSig=Array.from({length:D},(_,i)=>(i<7?-0.2:1.5)+gauss(r)*0.05);
+    s.question.split(/\s+/).slice(0,10).forEach(w=>pts.push({label:w,kind:"texto",emb:cText.map(c=>c+gauss(r)*0.3)}));
+    s.options.forEach((op,i)=>pts.push({label:"["+String.fromCharCode(65+i)+"] "+op,kind:"opción",emb:cText.map((c,j)=>c+gauss(r)*0.3+(j<3?0.4:0))}));
+    const feat=ecgSignal(s).featPatch;
+    for(let p=0;p<feat.length;p++){let e=cSig.map(c=>c+gauss(r)*0.3);
+      if(condition==="perturbado")e=e.map(()=>gauss(r)*1.4);else if(condition==="sinproy")e=e.map(v=>v+0.6+gauss(r)*0.2);else if(feat[p]>0.45)e=e.map((v,j)=>v+(cText[j]-v)*0.4);
+      pts.push({label:"seg t"+(p*PATCH),kind:"segmento ECG",emb:e,feat:feat[p],patch:p});}
+    return pts;};
+
+  state.filters={qtype:"todos",attr:"todos",config:CONFIGS[0],correct:"todos",pred:"todos",level:"todos"};
+  state.selId=DATA[0].id;state.v4sel=null;
+  const g=payload.globals||{},ev=g.evaluation||{},cf=g.counterfactual||{};
+  const extra=[];
+  if(ev.exact_match!=null)extra.push("EM "+(+ev.exact_match).toFixed(2));
+  if(ev.token_f1!=null)extra.push("F1 "+(+ev.token_f1).toFixed(2));
+  if(cf.textual_dominance!=null)extra.push("Dtexto(QCFR−ECFR) "+(+cf.textual_dominance).toFixed(2));
+  d3.select(".brand .t2").text((payload.meta&&payload.meta.note?payload.meta.note:("Datos reales · "+DATA.length+" muestras"))+(extra.length?" · "+extra.join(" · "):""));
+}
+if(window.ECGQA_DATA){try{applyRealData(window.ECGQA_DATA);}catch(e){console.error("Fallo al cargar datos reales, uso sintéticos:",e);}}
+
+buildFilters();
+requestAnimationFrame(renderAll);
+</script>
+</body>
+</html>

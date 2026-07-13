@@ -1,7 +1,7 @@
 """Export the small-run results into the D3 visualizer's data file.
 
 Reads the artefacts produced by the ECG-QA small pipeline and writes
-``Visualization/ecgqa_viz_data.js`` (a ``window.ECGQA_DATA = {...}`` assignment).
+``visualizer/ecgqa_viz_data.js`` (a ``window.ECGQA_DATA = {...}`` assignment).
 The visualizer loads that file via ``<script src>`` -- which works from a plain
 ``file://`` double-click, unlike ``fetch`` -- and, when present, replaces its
 synthetic demo data with the real run.
@@ -19,7 +19,7 @@ Example::
     python scripts/export_visualizer_data.py \\
       --results_dir outputs/ecgqa_small \\
       --processed data/ecgqa_small/processed_test.jsonl \\
-      --output Visualization/ecgqa_viz_data.js
+      --output visualizer/ecgqa_viz_data.js
 """
 
 from __future__ import annotations
@@ -147,7 +147,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export small-run results for the D3 visualizer")
     parser.add_argument("--results_dir", type=Path, default=PROJECT_ROOT / "outputs/ecgqa_small")
     parser.add_argument("--processed", type=Path, default=PROJECT_ROOT / "data/ecgqa_small/processed_test.jsonl")
-    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "Visualization/ecgqa_viz_data.js")
+    parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "visualizer/ecgqa_viz_data.js")
     parser.add_argument("--attributions", type=Path, default=PROJECT_ROOT / "outputs/ecgqa_small/attributions.jsonl",
                         help="Real model attributions (from compute_attributions_small.py); optional")
     parser.add_argument("--ablation", type=Path, default=PROJECT_ROOT / "outputs/ecgqa_small/ablation.jsonl",

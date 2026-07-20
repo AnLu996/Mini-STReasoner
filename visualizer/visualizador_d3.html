@@ -68,9 +68,28 @@ svg{display:block}
 
 /* main + grid */
 .main{flex:1;min-width:0;min-height:0;display:flex}
-.dash{flex:1;min-height:0;display:grid;gap:9px;padding:10px 11px;grid-template-columns:repeat(3,1fr);grid-template-rows:auto minmax(220px,1fr) minmax(255px,1fr)}
+.dash{flex:1;min-height:0;display:grid;gap:9px;padding:10px 11px;grid-template-columns:repeat(3,1fr);grid-template-rows:auto auto minmax(220px,1fr) minmax(255px,1fr);overflow-y:auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 12px;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 2px rgba(60,52,38,.10),0 3px 8px rgba(60,52,38,.06)}
 .card.v1,.card.v4{grid-column:1 / -1}
+
+/* cabecera de identidad del caso (quién es este caso, qué se preguntó, qué se esperaba, qué respondió) */
+.casehdr{grid-column:1 / -1;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(60,52,38,.10)}
+.casehdr .idline{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+.casehdr .counter{font-size:12px;font-weight:600;color:var(--txt);letter-spacing:.2px}
+.casehdr .cid{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:2px 7px;color:var(--dim);user-select:all}
+.casehdr .qtag{border:1px solid var(--line2);border-radius:5px;padding:2px 7px;color:var(--dim)}
+.casehdr .qtext{font-size:13.5px;line-height:1.4;color:var(--txt)}
+.casehdr .ansline{display:flex;gap:8px;flex-wrap:wrap;align-items:stretch}
+.casehdr .ans{flex:1 1 190px;min-width:0;border:1px solid var(--line2);border-radius:8px;padding:5px 9px;background:var(--panel2)}
+.casehdr .ans .al{display:block;font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:.5px;color:var(--faint);margin-bottom:1px}
+.casehdr .ans .av{font-size:12.5px;font-weight:600;word-break:break-word}
+.casehdr .ans.exp{background:#e7f4ec;border-color:#a9d2bb}.casehdr .ans.exp .av{color:var(--ok)}
+.casehdr .ans.got.hit{background:#e7f4ec;border-color:#a9d2bb}.casehdr .ans.got.hit .av{color:var(--ok)}
+.casehdr .ans.got.miss{background:#fbe7e5;border-color:#d99a93}.casehdr .ans.got.miss .av{color:var(--alert)}
+.casehdr .hitbadge{flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:11px;font-weight:600;border-radius:8px;padding:5px 12px}
+.casehdr .hitbadge.hit{background:#e7f4ec;color:var(--ok);border:1px solid #a9d2bb}
+.casehdr .hitbadge.miss{background:#fbe7e5;color:var(--alert);border:1px solid #d99a93}
+
 .head{flex:0 0 auto;display:flex;align-items:center;gap:8px;margin-bottom:2px}
 .vtag{font-family:var(--mono);font-size:9.5px;font-weight:600;color:#fff;background:var(--sig-mod);border-radius:5px;padding:2px 6px;letter-spacing:.5px}
 .head h2{font-size:12.5px;font-weight:600}
@@ -128,6 +147,16 @@ svg{display:block}
 .cfldetail .kk{font-family:var(--mono);font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.3px}
 .cflsig{flex:1;min-height:70px;width:100%}
 .rellegend{flex:0 0 auto;font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:3px}
+/* occlusion temporal: qué ventana del ECG cambia la respuesta */
+.occstrip{flex:0 0 auto;margin-top:6px}
+.occstrip .ol{font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:.4px;color:var(--faint);margin-bottom:3px}
+.occstrip .ow{display:flex;gap:4px;flex-wrap:wrap}
+.occstrip .ob{flex:1 1 0;min-width:52px;border-radius:6px;padding:3px 5px;cursor:pointer;text-align:center;font-family:var(--mono);font-size:8.5px;border:1px solid var(--line2);background:var(--panel2);color:var(--dim);line-height:1.3}
+.occstrip .ob.chg{background:#fbe7e5;border-color:#d99a93;color:#8c2c25;font-weight:600}
+.occstrip .ob.sel{outline:2px solid var(--txt);outline-offset:-2px}
+.occstrip .ob:hover{border-color:var(--sig-mod)}
+.occstrip .osum{font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:4px;line-height:1.35}
+.occstrip .osum b{color:var(--txt)}
 
 /* V5 */
 .qa-q{flex:0 0 auto;font-size:12px;margin-bottom:6px}
@@ -165,6 +194,20 @@ svg{display:block}
 .stagepanel .pdiag{margin-top:12px;background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:9px 11px;font-size:11.5px;line-height:1.45}
 .stagepanel .pclose{position:absolute;top:11px;right:13px;cursor:pointer;font-family:var(--mono);font-size:14px;color:var(--faint);border:none;background:none}
 .stagepanel .pclose:hover{color:var(--txt)}
+.stagepanel.wide{width:min(620px,94vw);max-height:86vh;overflow-y:auto}
+.stagepanel .pwarn{margin-top:10px;background:#fbf1d8;border:1px solid #ddc88f;color:#7a5c12;border-radius:8px;padding:8px 11px;font-size:11.5px;line-height:1.45}
+/* panel de metodología: cómo se calcula cada número */
+.mth{margin-top:11px}
+.mth h4{margin:0 0 3px;font-size:12px;font-weight:600}
+.mth .mdesc{font-size:11.5px;line-height:1.5;color:var(--dim);margin-bottom:5px}
+.mth .eq{font-family:var(--mono);font-size:11.5px;background:var(--panel2);border:1px solid var(--line2);border-left:3px solid var(--sig-mod);border-radius:6px;padding:7px 10px;line-height:1.6;overflow-x:auto;white-space:nowrap}
+.mth .eq em{color:var(--text-mod);font-style:normal;font-weight:600}
+.mth .eq i{color:var(--sig-mod);font-style:normal;font-weight:600}
+.mth .thr{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.mth .thr span{font-family:var(--mono);font-size:9.5px;background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:3px 7px;color:var(--dim)}
+.mth .thr b{color:var(--txt)}
+/* celda de impacto exactamente 0 / por debajo del umbral de inactividad */
+.stab td.zero{font-family:var(--mono);text-align:center;background:repeating-linear-gradient(45deg,#f2efe6,#f2efe6 4px,#e8e4d9 4px,#e8e4d9 8px);color:#8a5a12;font-weight:600;border-radius:4px}
 
 @media(max-width:1100px){
   html,body{overflow:auto}
@@ -209,11 +252,15 @@ svg{display:block}
 
 <main class="main">
 <div class="dash">
+  <!-- Cabecera de identidad del caso -->
+  <div class="casehdr" id="caseHdr"></div>
+
   <!-- V1 -->
   <div class="card v1">
     <div class="head"><span class="vtag">V1</span><h2>Trazado representacional interno</h2>
       <span class="scnchip base" id="v1chip">Original</span>
       <div class="sp">
+        <button class="btn" id="methodBtn">? Cómo se calcula</button>
         <button class="btn" id="animPlay">▶ Reproducir flujo</button>
         <button class="btn" id="animReset">⟲ Reiniciar</button>
       </div>
@@ -272,6 +319,7 @@ svg{display:block}
         <svg class="cflsig" id="cflSig"></svg>
         <div class="cflans" id="cflSigAns"></div>
         <div class="rellegend" id="cflLegend"></div>
+        <div class="occstrip" id="occStrip"></div>
       </div>
     </div>
   </div>
@@ -320,7 +368,9 @@ const TONE_COL={text:"var(--text-mod)",ecg:"var(--sig-mod)",bal:"var(--neutral)"
 const TONE_FILL={text:"#f7e7cf",ecg:"#d6ecee",bal:"#e7e9ec",na:"#ece9e1"};
 function clsColor(c){return c==="TEXT_DOMINANT"?"var(--text-mod)":c==="ECG_DOMINANT"?"var(--ecg-blue)":c==="INSENSITIVE"?"var(--warn)":c==="BALANCED"?"var(--neutral)":"var(--faint)";}
 function clsFill(c){return c==="TEXT_DOMINANT"?"#fbe7e5":c==="ECG_DOMINANT"?"#e6f0f8":c==="INSENSITIVE"?"#fbf1d8":"#eef0f2";}
-const heat=d3.scaleSequential(t=>d3.interpolateInferno(0.18+t*0.62)).domain([0,1]);
+// Escala clara→oscura: un impacto de 0 debe LEERSE como bajo. (Antes se usaba inferno,
+// cuyo extremo inferior es casi negro y hacía que un 0.000 pareciera un valor alto.)
+const heat=d3.scaleSequential(t=>d3.interpolateYlOrBr(0.05+t*0.80)).domain([0,1]);
 
 /* ===== flips y comportamiento (derivados de las predicciones, sin recalcular) ===== */
 function flipsOf(c){const b=norm(c.prediction_original);return{
@@ -415,7 +465,7 @@ let CLASSES=["TEXT_DOMINANT","ECG_DOMINANT","BALANCED","INSENSITIVE","UNCLEAR"];
 let MODE="internal",METRIC="cosine",AMPLIF=null,VIZNOTE=null;
 const state={selId:CASES[0].case_id,scenario:"original",
   filters:{dominance:"todos",behavior:"todos",qtype:"todos",attr:"todos",level:"todos"},
-  v4word:null,anim:{step:0,timer:null}};
+  v4word:null,occSel:null,anim:{step:0,timer:null}};
 
 function scope(){const f=state.filters;return CASES.filter(c=>{
   if(f.dominance!=="todos"&&c.case_dominance!==f.dominance)return false;
@@ -445,7 +495,7 @@ function buildFilters(){const defs=[
   const root=d3.select("#filters");root.html("");
   defs.forEach(d=>{const fl=root.append("div").attr("class","fl");fl.append("label").text(d.lab);
     const sel=fl.append("select").on("change",function(){state.filters[d.key]=this.value;
-      const sc=scope();if(sc.length&&!sc.find(c=>c.case_id===state.selId)){state.selId=sc[0].case_id;state.v4word=null;}
+      const sc=scope();if(sc.length&&!sc.find(c=>c.case_id===state.selId)){state.selId=sc[0].case_id;state.v4word=null;state.occSel=null;}
       renderAll();});
     sel.selectAll("option").data(d.opts).enter().append("option")
       .attr("value",x=>Array.isArray(x)?x[0]:x).text(x=>Array.isArray(x)?x[1]:x)
@@ -456,9 +506,71 @@ function renderCaseTable(){const host=d3.select("#caseTable");host.html("");
   const rows=scope().slice().sort((a,b)=>(b.text_share??-1)-(a.text_share??-1));
   const tbl=host.append("table");tbl.append("tr").html("<th>Caso</th><th style='text-align:right'>D_text</th>");
   rows.forEach(c=>{const tr=tbl.append("tr").attr("class",c.case_id===state.selId?"sel":"")
-      .on("click",()=>{state.selId=c.case_id;state.v4word=null;renderAll();});
+      .on("click",()=>{state.selId=c.case_id;state.v4word=null;state.occSel=null;renderAll();});
     tr.append("td").text(shortId(c.case_id));
     tr.append("td").attr("class","dv").style("color",clsColor(c.case_dominance)).text(c.text_share==null?"—":c.text_share.toFixed(2));});}
+
+/* =================== cabecera de identidad del caso ===================
+   Responde, sin tener que bucear en los paneles: qué caso es (índice + id completo),
+   qué se preguntó, qué se esperaba y qué respondió el modelo. */
+function isHit(c){return c.prediction_original!=null&&c.expected!=null&&norm(c.prediction_original)===norm(c.expected);}
+function renderCaseHdr(){const c=selCase(),sc=scope(),idx=sc.findIndex(s=>s.case_id===c.case_id)+1||1;
+  const hit=isHit(c),host=d3.select("#caseHdr");
+  const nInterv=(c.interventions||[]).length;
+  host.html(
+    `<div class="idline">`+
+      `<span class="counter">Caso ${idx} de ${sc.length}</span>`+
+      (sc.length!==CASES.length?`<span>(${CASES.length} sin filtrar)</span>`:``)+
+      `<span class="cid" title="identificador completo del caso">${c.case_id}</span>`+
+      (c.question_type?`<span class="qtag">${c.question_type}</span>`:``)+
+      (c.attribute_type?`<span class="qtag">${c.attribute_type}</span>`:``)+
+      (nInterv?`<span>${nInterv} intervenciones</span>`:``)+
+    `</div>`+
+    `<div class="qtext">${c.question||"(pregunta no disponible)"}</div>`+
+    `<div class="ansline">`+
+      `<div class="ans exp"><span class="al">Respuesta esperada (etiqueta)</span><span class="av">${na(c.expected)}</span></div>`+
+      `<div class="ans got ${hit?"hit":"miss"}"><span class="al">Respuesta del modelo (sin intervenir)</span><span class="av">${na(c.prediction_original)}</span></div>`+
+      `<div class="hitbadge ${hit?"hit":"miss"}">${hit?"✓ acierta":"✗ falla"}</div>`+
+    `</div>`);}
+
+/* =================== panel de metodología (cómo se calcula cada número) =================== */
+function openMethodPanel(){
+  const met=METRIC==="l2"?"L2 normalizada: d(a,b) = ‖a−b‖ / (‖a‖+‖b‖)":"coseno: d(a,b) = 1 − cos(a,b)";
+  const p=d3.select("#stagePanel").classed("wide",true);
+  p.html(`<button class="pclose" id="pClose">✕</button>`+
+    `<h3>¿Cómo se calcula cada número?</h3>`+
+    `<div class="pmeta">Trazado representacional interno · métrica activa: ${METRIC==="l2"?"L2 normalizada":"coseno"} · ${CASES.length} casos</div>`+
+
+    `<div class="mth"><h4>1 · Activación de una etapa</h4>`+
+    `<div class="mdesc">Para cada etapa <b>k</b> se captura su activación con un <i>forward hook</i> y se promedia sobre los tokens, obteniendo un vector <b>h<sub>k</sub></b>. Se ejecuta el modelo tres veces sobre el mismo caso: entrada original, entrada con la <em>pregunta reescrita</em> (Text-CF) y entrada con el <i>ECG perturbado</i> (ECG-CF).</div>`+
+    `<div class="eq">h<sub>k</sub><sup>orig</sup> , h<sub>k</sub><sup><em>textCF</em></sup> , h<sub>k</sub><sup><i>ecgCF</i></sup></div></div>`+
+
+    `<div class="mth"><h4>2 · Impacto por modalidad</h4>`+
+    `<div class="mdesc">El impacto es cuánto <b>se mueve</b> la representación de esa etapa al intervenir una modalidad. No es una atribución causal: mide desplazamiento representacional.</div>`+
+    `<div class="eq"><em>impacto_texto</em>(k) = d( h<sub>k</sub><sup>orig</sup> , h<sub>k</sub><sup>textCF</sup> )<br>`+
+    `<i>impacto_ECG</i>(k)&nbsp;&nbsp; = d( h<sub>k</sub><sup>orig</sup> , h<sub>k</sub><sup>ecgCF</sup> )<br>`+
+    `donde d = ${met}</div>`+
+    `<div class="mdesc" style="margin-top:6px">En <b>encoder</b> y <b>proyector</b> el texto todavía no ha entrado al flujo, así que <em>impacto_texto</em> es <b>no aplica (n/d)</b> — distinto de valer cero.</div></div>`+
+
+    `<div class="mth"><h4>3 · Δ texto−ECG</h4>`+
+    `<div class="mdesc">Diferencia cruda entre ambos impactos en la misma etapa. Positivo = la etapa reacciona más al texto.</div>`+
+    `<div class="eq">Δ(k) = <em>impacto_texto</em>(k) − <i>impacto_ECG</i>(k)</div></div>`+
+
+    `<div class="mth"><h4>4 · D_texto (cuota textual del caso)</h4>`+
+    `<div class="mdesc">Proporción del movimiento total atribuible al texto, medida en la etapa de salida. Es la métrica del veredicto: 0.5 = equilibrio, 1.0 = sólo el texto mueve la respuesta.</div>`+
+    `<div class="eq">D_texto = <em>impacto_texto</em> / ( <em>impacto_texto</em> + <i>impacto_ECG</i> )</div></div>`+
+
+    `<div class="mth"><h4>5 · Clasificación del caso</h4>`+
+    `<div class="mdesc">Con <b>brecha = D_texto − 0.5</b> y los umbrales del payload:</div>`+
+    `<div class="eq">brecha ≥ margen&nbsp; → TEXT_DOMINANT<br>`+
+    `−brecha ≥ margen → ECG_DOMINANT<br>`+
+    `suma de impactos &lt; inactivo y sin cambios → INSENSITIVE<br>`+
+    `algún impacto n/d → UNCLEAR &nbsp;·&nbsp; en otro caso → BALANCED</div>`+
+    `<div class="thr"><span>margen = <b>${THR.margin}</b></span><span>inactivo = <b>${THR.inactive}</b></span></div></div>`+
+
+    `<div class="pwarn"><b>Límite de interpretación.</b> Todo lo anterior mide <i>sensibilidad</i>: cuánto cambia la representación o la respuesta al intervenir una entrada. No demuestra que el sesgo <i>nazca</i> en una etapa concreta, sólo dónde se manifiesta o se amplifica.</div>`);
+  d3.select("#backdrop").classed("show",true);p.classed("show",true);
+  d3.select("#pClose").on("click",closeStagePanel);}
 
 /* =================== V1 · flujo =================== */
 function renderFlow(){const c=selCase(),scn=SCN(state.scenario),svg=d3.select("#flow");svg.selectAll("*").remove();
@@ -476,7 +588,23 @@ function renderFlow(){const c=selCase(),scn=SCN(state.scenario),svg=d3.select("#
       .attr("fill",b.stage?TONE_FILL[tone]:"#e6e2d8").attr("stroke",animOn?"var(--txt)":(b.stage?TONE_COL[tone]:"var(--line)")).attr("stroke-width",animOn?3:1.6);
     g.append("text").attr("x",bx(i)+bw/2).attr("y",top+16).attr("text-anchor","middle").attr("fill","var(--txt)").attr("font-size",10.5).attr("font-weight",600).text(b.lab);
     g.append("text").attr("x",bx(i)+bw/2).attr("y",top+28).attr("text-anchor","middle").attr("fill","var(--faint)").attr("font-family","var(--mono)").attr("font-size",8).text(b.sub);
-    if(!st){g.append("text").attr("x",bx(i)+bw/2).attr("y",top+bh/2+12).attr("text-anchor","middle").attr("fill","var(--faint)").attr("font-family","var(--mono)").attr("font-size",8.5).text("entrada");return;}
+    // Caja de entrada: se dibuja la señal ECG AQUÍ, pegada al flujo. Antes sólo decía
+    // "entrada" y la onda vivía en V4, al otro extremo de la pantalla; por agrupación
+    // perceptual nadie la asociaba con el resto de la cadena.
+    if(!st){
+      const sig=c.sig,ax0=bx(i)+7,ax1=bx(i)+bw-7,ay0=top+34,ay1=top+bh-16;
+      if(sig&&sig.arr&&sig.arr.length>1){
+        const sx=d3.scaleLinear().domain([0,sig.arr.length-1]).range([ax0,ax1]),
+              sy=d3.scaleLinear().domain(d3.extent(sig.arr)).range([ay1,ay0]);
+        g.append("rect").attr("x",ax0).attr("y",ay0).attr("width",ax1-ax0).attr("height",ay1-ay0).attr("rx",4).attr("fill","#fff").attr("opacity",.55);
+        g.append("path").attr("d",d3.line().x((d,k)=>sx(k)).y(d=>sy(d)).curve(d3.curveMonotoneX)(sig.arr))
+          .attr("fill","none").attr("stroke","var(--sig-mod)").attr("stroke-width",1).style("pointer-events","none");
+        g.append("text").attr("x",bx(i)+bw/2).attr("y",top+bh-5).attr("text-anchor","middle").attr("fill","var(--faint)")
+          .attr("font-family","var(--mono)").attr("font-size",7.5).text("señal de entrada · deriv. II");
+      }else{
+        g.append("text").attr("x",bx(i)+bw/2).attr("y",top+bh/2+12).attr("text-anchor","middle").attr("fill","var(--faint)").attr("font-family","var(--mono)").attr("font-size",8.5).text("entrada");
+      }
+      return;}
     const barTop=top+38,barH=10,maxBar=bw-22,sc=v=>Math.max(2,Math.min(maxBar,(v||0)/0.9*maxBar));
     const drawBar=(yy,val,col,dim)=>{
       g.append("rect").attr("x",bx(i)+11).attr("y",yy).attr("width",maxBar).attr("height",barH).attr("rx",3).attr("fill","#fff").attr("opacity",.5);
@@ -488,7 +616,9 @@ function renderFlow(){const c=selCase(),scn=SCN(state.scenario),svg=d3.select("#
     g.append("text").attr("x",bx(i)+bw/2).attr("y",top+bh-7).attr("text-anchor","middle").attr("fill",TONE_COL[tone]).attr("font-family","var(--mono)").attr("font-size",9).attr("font-weight",600).text(dtxt);});
   const lg=d3.select("#flowLegend");lg.html("");
   [["var(--text-mod)","impacto texto (orig vs Text-CF)"],["var(--sig-mod)","impacto ECG (orig vs ECG-CF)"],["var(--neutral)","balanceado"]].forEach(([col,t])=>{const it=lg.append("div").attr("class","it");it.append("span").attr("class","sw").style("background",col);it.append("span").text(t);});}
-function flowTip(b,st){if(!st)return `<div class="tt">${b.lab}</div><div class="kv"><span>entrada</span><b>—</b></div>`;
+function flowTip(b,st){if(!st){const sg=selCase().sig;
+    return `<div class="tt">${b.lab}</div><div class="kv"><span>rol</span><b>entrada</b></div>`+
+      (sg&&sg.arr?`<div class="kv"><span>muestras</span><b>${sg.arr.length}</b></div><div class="kv" style="margin-top:3px"><span>Serie temporal cruda antes del encoder. Detalle y occlusion en V4.</span></div>`:``);}
   const diag=stageDiag(b.stage,st);
   return `<div class="tt">${b.lab}</div>`+
     `<div class="kv"><span>impacto_texto</span><b>${fmt(st.impact_text)}</b></div>`+
@@ -498,26 +628,39 @@ function flowTip(b,st){if(!st)return `<div class="tt">${b.lab}</div><div class="
 
 /* =================== panel de detalle de etapa (clic en V1) =================== */
 function openStagePanel(stageKey){const c=selCase(),st=c.stages[stageKey],lab=(STAGES.find(s=>s[0]===stageKey)||["",stageKey])[1];
-  const p=d3.select("#stagePanel");
-  const row=(k,v)=>`<div class="prow"><span class="pk">${k}</span><span class="pv">${v}</span></div>`;
+  const p=d3.select("#stagePanel").classed("wide",false);
+  const row=(k,v,cls)=>`<div class="prow"><span class="pk">${k}</span><span class="pv"${cls?` style="color:${cls}"`:""}>${v}</span></div>`;
   const ampHere=AMPLIF&&AMPLIF.stage===stageKey;
+  const val=(v)=>v==null?"no aplica (n/d)":isInactive(v)?v.toFixed(3)+" ≈ 0 (sin reacción)":fmt(v);
+  const col=(v)=>v==null?"var(--faint)":isInactive(v)?"var(--warn)":null;
+  const warn=inactiveNote(st);
   p.html(`<button class="pclose" id="pClose">✕</button>`+
     `<h3>${lab}</h3><div class="pmeta">Trazado representacional interno · distancia: ${METRIC==="l2"?"L2 normalizada":"coseno"}</div>`+
-    row("Original vs Text-CF (impacto_texto)",fmt(st.impact_text))+
-    row("Original vs ECG-CF (impacto_ECG)",fmt(st.impact_ecg))+
-    row("diferencia_texto_ECG",st.delta_text_ecg==null?"no disponible":(st.delta_text_ecg>=0?"+":"")+st.delta_text_ecg.toFixed(3))+
-    `<div class="pdiag">${stageDiag(stageKey,st)}<br><br><b>El sesgo se manifiesta o se amplifica en esta etapa</b>${ampHere?" — es la etapa de mayor amplificación del desbalance en el agregado.":"."} No se afirma que el sesgo nazca aquí.</div>`);
+    row("Original vs Text-CF (impacto_texto)",val(st.impact_text),col(st.impact_text))+
+    row("Original vs ECG-CF (impacto_ECG)",val(st.impact_ecg),col(st.impact_ecg))+
+    row("diferencia_texto_ECG",st.delta_text_ecg==null?"no aplica (n/d)":(st.delta_text_ecg>=0?"+":"")+st.delta_text_ecg.toFixed(3))+
+    `<div class="pdiag">${stageDiag(stageKey,st)}<br><br><b>El sesgo se manifiesta o se amplifica en esta etapa</b>${ampHere?" — es la etapa de mayor amplificación del desbalance en el agregado.":"."} No se afirma que el sesgo nazca aquí.</div>`+
+    (warn?`<div class="pwarn">${warn.trim()}</div>`:``));
   d3.select("#backdrop").classed("show",true);p.classed("show",true);
   d3.select("#pClose").on("click",closeStagePanel);}
-function closeStagePanel(){d3.select("#stagePanel").classed("show",false);d3.select("#backdrop").classed("show",false);}
+function closeStagePanel(){d3.select("#stagePanel").classed("show",false).classed("wide",false);d3.select("#backdrop").classed("show",false);}
 
 /* =================== V2 · tabla por etapa =================== */
+// «no aplica» (null) y «cero» son cosas distintas: null = esa modalidad no circula por
+// la etapa; cero = sí circula pero la etapa no reaccionó. Se distinguen explícitamente.
+function isInactive(v){return v!=null&&v<=THR.inactive;}
+function inactiveNote(st){
+  if(isInactive(st.impact_ecg)&&isInactive(st.impact_text))return " Ninguna de las dos modalidades movió esta etapa (ambos impactos ≈ 0): etapa insensible.";
+  if(isInactive(st.impact_ecg))return ` El ECG perturbado NO movió esta etapa (impacto_ECG = ${st.impact_ecg.toFixed(3)} ≤ ${THR.inactive}): la señal entra pero la representación no cambia.`;
+  if(isInactive(st.impact_text))return ` La pregunta reescrita NO movió esta etapa (impacto_texto = ${st.impact_text.toFixed(3)} ≤ ${THR.inactive}).`;
+  return "";}
 function stageDiag(key,st){if(!st||st.impact_text==null&&st.impact_ecg==null)return "etapa sin distancias disponibles (no disponible)";
-  if(st.impact_text==null)return "Sólo circula el ECG: impacto_texto no aplica.";
+  if(st.impact_text==null)return "Sólo circula el ECG: impacto_texto no aplica (el texto todavía no ha entrado al flujo)."+inactiveNote(st);
+  if(st.impact_ecg==null)return "Sólo circula el texto: impacto_ECG no aplica en esta etapa."+inactiveNote(st);
   const d=st.delta_text_ecg;if(d==null)return "—";
   const tone=d>THR.margin?"predomina la sensibilidad al texto":d<-THR.margin?"predomina la sensibilidad al ECG":"sensibilidad texto/ECG comparable";
   const amp=(AMPLIF&&AMPLIF.stage===key)?" (aquí se amplifica el desbalance)":"";
-  return `${tone} (Δ=${(d>=0?"+":"")+d.toFixed(2)})${amp}.`;}
+  return `${tone} (Δ=${(d>=0?"+":"")+d.toFixed(2)})${amp}.`+inactiveNote(st);}
 function renderStageTable(){const c=selCase(),scn=SCN(state.scenario),host=d3.select("#stageTable");host.html("");
   const tbl=host.append("table");const tr0=tbl.append("tr");
   tr0.append("th").text("Etapa");
@@ -526,7 +669,12 @@ function renderStageTable(){const c=selCase(),scn=SCN(state.scenario),host=d3.se
   tr0.append("th").text("Δ texto−ECG");tr0.append("th").text("Diagnóstico");
   STAGES.forEach(([key,lab])=>{const st=c.stages[key],tr=tbl.append("tr");
     tr.append("td").attr("class","stage").text(lab).on("click",()=>openStagePanel(key));
-    const cell=val=>{if(val==null){tr.append("td").attr("class","na").text("n/d");return;}
+    const cell=val=>{
+      if(val==null){tr.append("td").attr("class","na").text("n/d")
+        .attr("title","no aplica: esta modalidad no circula por la etapa");return;}
+      if(isInactive(val)){  // cero real: la modalidad circula pero la etapa no reaccionó
+        tr.append("td").attr("class","zero").text(val.toFixed(3)+" ≈ 0")
+          .attr("title",`sin reacción: impacto ≤ umbral de inactividad (${THR.inactive})`);return;}
       const bg=heat(Math.min(1,val/0.9)),light=d3.lab(bg).l>62;  // texto blanco sobre fondos fuertes/oscuros
       tr.append("td").attr("class","num").style("background",bg).style("color",light?"var(--txt)":"#fff").text(val.toFixed(3));};
     cell(st.impact_text);cell(st.impact_ecg);
@@ -614,6 +762,7 @@ function renderV4(){const c=selCase(),scn=SCN(state.scenario);
   }
   // ---- panel de señal ----
   renderV4Sig(c,scn);
+  renderOccStrip();
   d3.select("#v4chip").attr("class","scnchip "+scn.cls).text(scn.label);}
 function showWordDetail(c,scn,word,modText){const box=d3.select("#cflDetail");
   const fl=scenarioFlip(c,scn);
@@ -624,6 +773,32 @@ function showWordDetail(c,scn,word,modText){const box=d3.select("#cflDetail");
     `<div style="margin-top:4px"><span class="kk">respuesta original</span> <b>${c.prediction_original}</b> · <span class="kk">contrafactual</span> <b>${na(scn.pred(c))}</b></div>`+
     `<div><span class="kk">cambio de respuesta</span> <b>${fl==null?"no disponible":fl?"sí":"no"}</b> · <span class="kk">impacto textual del caso (D_text)</span> <b>${c.text_share==null?"—":c.text_share.toFixed(2)}</b></div>`+
     `<div style="margin-top:3px;color:var(--faint)">Sin datos por palabra individual: se muestra la comparación de frase completa (no se inventa impacto token-level).</div>`);}
+/* Occlusion temporal por ventanas: se enmascara un tramo del ECG (a cero en todas las
+   derivaciones), se vuelve a generar la respuesta y se registra si cambió. Es un test
+   de necesidad sobre la señal, no una atribución por gradiente. */
+function occWindows(c){return (c.interventions||[]).filter(i=>i.kind==="ecg"&&Array.isArray(i.segment)&&i.segment.length===2);}
+function occTip(c,iv,k){const a=(iv.segment[0]*100).toFixed(0),b=(iv.segment[1]*100).toFixed(0);
+  return `<div class="tt">Ventana ${k+1} · ${a}–${b}% del registro</div>`+
+    `<div class="kv"><span>tramo enmascarado</span><b>a cero</b></div>`+
+    `<div class="kv"><span>respuesta original</span><b>${na(c.prediction_original)}</b></div>`+
+    `<div class="kv"><span>con la ventana oculta</span><b>${na(iv.answer)}</b></div>`+
+    `<div class="kv" style="margin-top:3px"><span>${iv.changed?"la respuesta CAMBIA: el modelo necesita este tramo":"la respuesta NO cambia: el tramo es prescindible"}</span></div>`;}
+function renderOccStrip(){const c=selCase(),host=d3.select("#occStrip"),ws=occWindows(c);host.html("");
+  if(!ws.length){host.html(`<div class="ol">Occlusion temporal</div><div class="osum">No hay intervenciones por ventana en este caso (se generan con <b>--ecg_segments</b>).</div>`);return;}
+  const nChg=ws.filter(w=>w.changed).length;
+  host.append("div").attr("class","ol").text(`Occlusion temporal · ${ws.length} ventanas · ¿qué tramo del ECG necesita el modelo?`);
+  const row=host.append("div").attr("class","ow");
+  ws.forEach((iv,k)=>{const a=(iv.segment[0]*100).toFixed(0),b=(iv.segment[1]*100).toFixed(0);
+    row.append("div").attr("class","ob"+(iv.changed?" chg":"")+(state.occSel===k?" sel":""))
+      .html(`${a}–${b}%<br>${iv.changed?"cambia":"igual"}`)
+      .on("mousemove",ev=>showTip(ev,occTip(c,iv,k))).on("mouseleave",hideTip)
+      .on("click",()=>{state.occSel=(state.occSel===k?null:k);renderV4();});});
+  const sum=host.append("div").attr("class","osum");
+  if(nChg===0)sum.html(`<b>Ninguna</b> de las ${ws.length} ventanas cambia la respuesta: enmascarar cualquier tramo del ECG es indiferente para el modelo. Evidencia directa de que la señal no participa en la decisión.`);
+  else sum.html(`<b>${nChg}/${ws.length}</b> ventanas cambian la respuesta al ser enmascaradas: el modelo sí depende de esos tramos.`);
+  if(state.occSel!=null&&ws[state.occSel]){const iv=ws[state.occSel];
+    sum.append("div").style("margin-top","4px").style("color","var(--txt)")
+      .html(`Ventana ${state.occSel+1} seleccionada · <b>${na(c.prediction_original)}</b> → <b>${na(iv.answer)}</b> · ${iv.detail||""}`);}}
 function renderV4Sig(c,scn){const svg=d3.select("#cflSig"),sigLab=d3.select("#cflSigLab"),leg=d3.select("#cflLegend"),ansH=d3.select("#cflSigAns");
   svg.selectAll("*").remove();ansH.html("");
   const sig=c.sig;if(!sig||!sig.arr){leg.text("Onda ECG no disponible.");return;}
@@ -637,9 +812,26 @@ function renderV4Sig(c,scn){const svg=d3.select("#cflSig"),sigLab=d3.select("#cf
   for(let p=0;p<nP;p++)svg.append("rect").attr("x",M.l+p*pw).attr("y",M.t).attr("width",pw).attr("height",H-M.b-M.t)
     .attr("fill",heat(sig.featPatch[p])).attr("opacity",.12+sig.featPatch[p]*0.34).style("cursor","pointer")
     .on("mousemove",ev=>showTip(ev,`<div class="tt">Segmento ECG ${p+1}/${nP}</div><div class="kv"><span>peso (relevancia)</span><b>${sig.featPatch[p].toFixed(2)}</b></div>`)).on("mouseleave",hideTip);
-  // segmentos alterados (no interceptan el hover de pesos)
-  (sig.altered_segments||[]).forEach(seg=>{const a=seg[0]*(sig.arr.length-1),b=seg[1]*(sig.arr.length-1);
+  // Segmentos alterados por el escenario activo. Sólo tiene sentido dibujarlos cuando el
+  // escenario realmente interviene la señal, y sólo si NO cubren la señal entera: una
+  // cobertura total no marca nada y tapaba la onda por completo.
+  const alt=sig.altered_segments||[],cover=alt.reduce((s,g)=>s+(g[1]-g[0]),0);
+  if(isEcg&&alt.length&&cover<0.9)alt.forEach(seg=>{const a=seg[0]*(sig.arr.length-1),b=seg[1]*(sig.arr.length-1);
     svg.append("rect").attr("x",x(a)).attr("y",M.t).attr("width",x(b)-x(a)).attr("height",H-M.b-M.t).attr("fill","rgba(194,67,58,0.14)").attr("stroke","var(--alert)").attr("stroke-dasharray","2 2").attr("stroke-width",1).style("pointer-events","none");});
+
+  // ---- Occlusion temporal: cada ventana se pone a cero y se re-genera la respuesta.
+  // Es la evidencia más directa de QUÉ TRAMO del ECG usa el modelo. Ya venía calculada
+  // en las intervenciones y no se mostraba en ningún panel.
+  if(!isNo)occWindows(c).forEach((iv,k)=>{
+    const a=iv.segment[0]*(sig.arr.length-1),b=iv.segment[1]*(sig.arr.length-1),sel=state.occSel===k;
+    svg.append("rect").attr("x",x(a)).attr("y",M.t).attr("width",Math.max(1,x(b)-x(a))).attr("height",H-M.b-M.t)
+      .attr("fill",iv.changed?"rgba(194,67,58,0.16)":"rgba(0,0,0,0)")
+      .attr("stroke",sel?"var(--txt)":(iv.changed?"var(--alert)":"var(--line)"))
+      .attr("stroke-width",sel?2:1).attr("stroke-dasharray",iv.changed?"none":"2 3")
+      .style("cursor","pointer")
+      .on("mousemove",ev=>showTip(ev,occTip(c,iv,k)))
+      .on("mouseleave",hideTip)
+      .on("click",()=>{state.occSel=(state.occSel===k?null:k);renderV4();});});
   const line=d3.line().x((d,i)=>x(i)).y(d=>y(d)).curve(d3.curveMonotoneX);
   if(isNo){
     svg.append("path").attr("d",line(sig.arr)).attr("fill","none").attr("stroke","var(--faint)").attr("stroke-width",1).attr("stroke-dasharray","4 3").attr("opacity",.5);
@@ -653,9 +845,10 @@ function renderV4Sig(c,scn){const svg=d3.select("#cflSig"),sigLab=d3.select("#cf
   if(isEcg||isNo){const fl=scenarioFlip(c,scn);
     ansH.html(`<span class="rl" style="font-family:var(--mono);font-size:8px;color:var(--faint)">Original → ${scn.label}:</span> <b>${c.prediction_original}</b> → <b>${na(scn.pred(c))}</b>`);
     ansH.append("span").attr("class","chg-badge "+(fl==null?"na":fl?"yes":"no")).text(fl==null?"resp.: no disponible":fl?"respuesta cambió":"respuesta no cambió");}
-  leg.html(isEcg?`<b style="color:var(--sig-mod)">———</b> ECG original · <b style="color:var(--ecg-blue)">- - -</b> ECG intervenido · marco rojo = segmento alterado · fondo = peso por segmento (hover)`
+  const occLeg=isNo?``:` · marco rojo = ventana de occlusion que <b>cambia</b> la respuesta, marco punteado = no cambia (clic para el detalle)`;
+  leg.html((isEcg?`<b style="color:var(--sig-mod)">———</b> ECG original · <b style="color:var(--ecg-blue)">- - -</b> ECG intervenido · fondo = peso por segmento (hover)`
     :isNo?`La modalidad temporal se elimina por completo en este escenario.`
-    :`Onda ECG original (sin intervención en «${scn.label}»). Fondo = peso por segmento (hover) · fuente: ${sig.feat_source||"proxy de energía"}.`);}
+    :`Onda ECG original (sin intervención en «${scn.label}»). Fondo = peso por segmento (hover) · fuente: ${sig.feat_source||"proxy de energía"}.`)+occLeg);}
 
 /* =================== V5 · QA contrafactual =================== */
 function renderQA(){const c=selCase(),scn=SCN(state.scenario);
@@ -715,13 +908,15 @@ function stopAnim(){if(state.anim.timer){clearInterval(state.anim.timer);state.a
 function resetAnim(){stopAnim();state.anim.step=0;renderFlow();animExplain();}
 d3.select("#animPlay").on("click",()=>{if(state.anim.timer)stopAnim();else startAnim();});
 d3.select("#animReset").on("click",resetAnim);
+d3.select("#methodBtn").on("click",openMethodPanel);
 
 /* =================== global =================== */
 function renderAll(){const c=selCase(),scn=SCN(state.scenario);
   d3.select("#v1chip").attr("class","scnchip "+scn.cls).text(scn.label);
+  renderCaseHdr();
   renderScenarioBar();renderFlow();animExplain();
   renderStageTable();renderEmb();renderV4();renderQA();renderSidebar();renderCaseTable();}
-function navTo(delta){const sc=scope();if(!sc.length)return;let i=sc.findIndex(s=>s.case_id===state.selId);if(i<0)i=0;i=(i+delta+sc.length)%sc.length;state.selId=sc[i].case_id;state.v4word=null;resetAnim();renderAll();}
+function navTo(delta){const sc=scope();if(!sc.length)return;let i=sc.findIndex(s=>s.case_id===state.selId);if(i<0)i=0;i=(i+delta+sc.length)%sc.length;state.selId=sc[i].case_id;state.v4word=null;state.occSel=null;resetAnim();renderAll();}
 d3.select("#prevS").on("click",()=>navTo(-1));
 d3.select("#nextS").on("click",()=>navTo(1));
 d3.select("#backdrop").on("click",closeStagePanel);
@@ -742,7 +937,7 @@ function applyTracingData(payload){
   CLASSES=payload.classes&&payload.classes.length?payload.classes:CLASSES;
   QTYPES=payload.qtypes&&payload.qtypes.length?payload.qtypes:[...new Set(CASES.map(c=>c.question_type))];
   ATTRS_L=payload.attributes&&payload.attributes.length?payload.attributes:[...new Set(CASES.map(c=>c.attribute_type))];
-  state.selId=CASES[0].case_id;state.v4word=null;
+  state.selId=CASES[0].case_id;state.v4word=null;state.occSel=null;
   if(VIZNOTE)d3.select(".brand .t2").text(VIZNOTE);
 }
 if(window.TRACING_DATA){try{applyTracingData(window.TRACING_DATA);}catch(e){console.error("Fallo al cargar datos reales, uso sintéticos:",e);}}

@@ -596,14 +596,19 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
         "any_flip": any_flip,
         "latent": latent,
         "interventions": interventions,
-        # Onda original + onda intervenida (ECG-CF ruido) + ventanas alteradas, para
-        # la comparacion contrafactual local de V4 (todo precomputado, no en vivo).
+        # Onda original + onda intervenida (ECG-CF ruido), para la comparacion
+        # contrafactual local de V4 (todo precomputado, no en vivo).
+        #
+        # altered_segments marca lo que altera el ESCENARIO activo. El ECG-CF aplica
+        # ruido gaussiano sobre toda la senal, asi que no hay un tramo concreto que
+        # marcar y queda vacio. Antes se rellenaba con las ventanas de occlusion, que
+        # cubren el 100% del registro: V4 las pintaba todas en rojo y tapaba la onda
+        # entera sin transmitir informacion. Las ventanas de occlusion viven en
+        # `interventions` (kind="ecg" con `segment`) y el visualizador las lee de ahi.
         "sig": {
             **waveform_summary(signal),
             "arr_cf": waveform_summary(signal_ecgcf)["arr"],
-            "altered_segments": [
-                iv["segment"] for iv in interventions if iv.get("segment")
-            ],
+            "altered_segments": [],
         },
     }
 

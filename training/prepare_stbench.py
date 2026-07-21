@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 from collections import defaultdict
 from contextlib import ExitStack
@@ -106,6 +107,31 @@ def iter_huggingface(
                 yield dict(row), config_name
 
 
+def reservoir_sample(
+    rows: Iterable[tuple[dict[str, Any], str]], max_per_task: int, seed: int
+) -> Iterator[tuple[dict[str, Any], str]]:
+    """Keep a uniform sample of ``max_per_task`` records per task in one pass.
+
+    Reservoir sampling avoids both loading the whole dataset into memory and the
+    ordering bias of taking the first N records, which matters because the
+    ST-Bench files are grouped by node count.
+    """
+    rng = random.Random(seed)
+    seen: dict[str, int] = defaultdict(int)
+    kept: dict[str, list[tuple[dict[str, Any], str]]] = defaultdict(list)
+    for record, source in rows:
+        task = infer_task(record, source)
+        seen[task] += 1
+        if len(kept[task]) < max_per_task:
+            kept[task].append((record, source))
+            continue
+        index = rng.randrange(seen[task])
+        if index < max_per_task:
+            kept[task][index] = (record, source)
+    for task in sorted(kept):
+        yield from kept[task]
+
+
 def prepare(rows: Iterable[tuple[dict[str, Any], str]], output_dir: Path) -> dict[str, int]:
     output_dir.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = defaultdict(int)
@@ -134,12 +160,18 @@ def main() -> None:
     parser.add_argument("--local-dir", type=Path)
     parser.add_argument("--output-dir", type=Path, default=Path("data/processed"))
     parser.add_argument("--configs", nargs="*", default=None)
+    parser.add_argument(
+        "--max-per-task", type=int, default=0, help="0 keeps every record"
+    )
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
     rows = (
         iter_local(args.local_dir)
         if args.local_dir
         else iter_huggingface(args.dataset_id, args.configs)
     )
+    if args.max_per_task:
+        rows = reservoir_sample(rows, args.max_per_task, args.seed)
     counts = prepare(rows, args.output_dir)
     print(json.dumps(counts, indent=2))
 

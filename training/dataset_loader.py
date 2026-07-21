@@ -34,6 +34,7 @@ class STBenchIterableDataset(IterableDataset):
         processed_dir: str | Path,
         tasks: list[str] | None = None,
         exclude_source_patterns: tuple[str, ...] = ("st-test",),
+        interleave: bool = True,
     ) -> None:
         super().__init__()
         root = Path(processed_dir)
@@ -41,19 +42,39 @@ class STBenchIterableDataset(IterableDataset):
         self.paths = [root / f"{task}.jsonl" for task in selected]
         self.paths = [path for path in self.paths if path.exists()]
         self.exclude_source_patterns = tuple(item.lower() for item in exclude_source_patterns)
+        self.interleave = interleave
         if not self.paths:
             raise FileNotFoundError(f"No processed JSONL files found under {root}")
+
+    def _filtered(self, path: Path) -> Iterator[dict[str, Any]]:
+        for item in iter_jsonl([path]):
+            source = str(item.get("metadata", {}).get("source", "")).lower()
+            if any(pattern in source for pattern in self.exclude_source_patterns):
+                continue
+            yield item
 
     def __iter__(self):
         worker = torch.utils.data.get_worker_info()
         paths = self.paths
         if worker is not None:
             paths = paths[worker.id :: worker.num_workers]
-        for item in iter_jsonl(paths):
-            source = str(item.get("metadata", {}).get("source", "")).lower()
-            if any(pattern in source for pattern in self.exclude_source_patterns):
-                continue
-            yield item
+        if not self.interleave:
+            for path in paths:
+                yield from self._filtered(path)
+            return
+        # Round-robin across tasks. Reading the files back to back would train on
+        # one task at a time and leave the model biased towards the last block;
+        # the reference training mixes the four tasks with equal probability
+        # (``--interleave_probs 0.25,0.25,0.25,0.25``).
+        streams = [self._filtered(path) for path in paths]
+        while streams:
+            still_active = []
+            for stream in streams:
+                item = next(stream, None)
+                if item is not None:
+                    yield item
+                    still_active.append(stream)
+            streams = still_active
 
 
 def _to_matrix(value: Any) -> list[list[float]]:

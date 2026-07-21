@@ -39,17 +39,45 @@ from inference.runtime import build_inputs, load_base_model, load_checkpoint  # 
 from training.dataset_loader import iter_jsonl  # noqa: E402
 
 
-TARGETS = ("mean", "std", "range", "length", "num_variables")
+# TimeSeriesEncoder z-scores each variable before the GRU, so absolute scale is
+# discarded by construction. Probing for it measures the normalisation working as
+# designed, not a fidelity failure — the informative targets are the ones that
+# survive standardisation.
+SCALE_TARGETS = ("mean", "std", "range")
+SHAPE_TARGETS = ("dominant_frequency", "autocorrelation_lag1", "trend_slope")
+STRUCTURE_TARGETS = ("length", "num_variables")
+TARGETS = SCALE_TARGETS + SHAPE_TARGETS + STRUCTURE_TARGETS
 
 
 def series_statistics(series: list[list[float]]) -> dict[str, float]:
     array = np.asarray(series, dtype=np.float64)
     if array.ndim == 1:
         array = array[:, None]
+
+    # Shape descriptors are computed on the standardised first variable so they
+    # are exactly the kind of information the encoder can still carry.
+    first = array[:, 0]
+    centred = first - first.mean()
+    deviation = first.std()
+    standardised = centred / deviation if deviation > 1e-9 else centred
+
+    spectrum = np.abs(np.fft.rfft(standardised))
+    dominant = float(np.argmax(spectrum[1:]) + 1) if spectrum.size > 1 else 0.0
+
+    if standardised.size > 1 and np.any(standardised):
+        lag1 = float(np.corrcoef(standardised[:-1], standardised[1:])[0, 1])
+        steps = np.arange(standardised.size, dtype=np.float64)
+        slope = float(np.polyfit(steps, standardised, 1)[0])
+    else:
+        lag1, slope = 0.0, 0.0
+
     return {
         "mean": float(array.mean()),
         "std": float(array.std()),
         "range": float(array.max() - array.min()),
+        "dominant_frequency": dominant,
+        "autocorrelation_lag1": 0.0 if np.isnan(lag1) else lag1,
+        "trend_slope": slope,
         "length": float(array.shape[0]),
         "num_variables": float(array.shape[1]),
     }
@@ -152,21 +180,28 @@ def main() -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(results, indent=2) + "\n")
 
-    header = f"{'objetivo':16s}" + "".join(
+    header = f"{'objetivo':22s}" + "".join(
         f"{f'{kind}/{stage}':>22s}"
         for kind in results["r2"]
         if results["r2"][kind]
         for stage in ("encoder", "projector")
     )
     print(header)
-    for name in TARGETS:
-        row = f"{name:16s}"
-        for kind in results["r2"]:
-            if not results["r2"][kind]:
-                continue
-            for stage in ("encoder", "projector"):
-                row += f"{results['r2'][kind][stage][name]:22.4f}"
-        print(row)
+    groups = {
+        "escala (el z-score la elimina)": SCALE_TARGETS,
+        "forma (sobrevive al z-score)": SHAPE_TARGETS,
+        "estructura": STRUCTURE_TARGETS,
+    }
+    for title, names in groups.items():
+        print(f"-- {title}")
+        for name in names:
+            row = f"{name:22s}"
+            for kind in results["r2"]:
+                if not results["r2"][kind]:
+                    continue
+                for stage in ("encoder", "projector"):
+                    row += f"{results['r2'][kind][stage][name]:22.4f}"
+            print(row)
     print(f"\nSaved to {output}")
 
 

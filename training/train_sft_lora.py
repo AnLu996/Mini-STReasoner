@@ -39,6 +39,12 @@ def parse_args() -> argparse.Namespace:
         help="continue from a previous checkpoint (its LoRA adapter, encoder and "
         "projector), as the reference pipeline chains alignment into reasoning",
     )
+    parser.add_argument(
+        "--match-embedding-scale",
+        action="store_true",
+        help="initialise the projector so temporal tokens enter with the same norm "
+        "as the LLM's text embeddings instead of sqrt(hidden_size)",
+    )
     return parser.parse_args()
 
 
@@ -88,6 +94,7 @@ def load_model(args: argparse.Namespace):
         temporal_hidden_dim=args.temporal_hidden_dim,
         temporal_dim=args.temporal_dim,
         num_temporal_tokens=args.num_temporal_tokens,
+        match_embedding_scale=args.match_embedding_scale,
     )
     if args.init_from:
         model.time_series_encoder.load_state_dict(
@@ -115,6 +122,7 @@ def save_checkpoint(args: argparse.Namespace, tokenizer, model: MiniSTReasoner) 
         "num_temporal_tokens": args.num_temporal_tokens,
         "max_seq_length": args.max_seq_length,
         "qlora": not args.no_qlora,
+        "match_embedding_scale": args.match_embedding_scale,
     }
     (args.output_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")
 

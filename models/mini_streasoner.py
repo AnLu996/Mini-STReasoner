@@ -24,6 +24,7 @@ class MiniSTReasoner(nn.Module):
         temporal_hidden_dim: int = 128,
         temporal_dim: int = 256,
         num_temporal_tokens: int = 4,
+        match_embedding_scale: bool = False,
     ) -> None:
         super().__init__()
         self.llm = llm
@@ -34,8 +35,17 @@ class MiniSTReasoner(nn.Module):
             temporal_dim=temporal_dim,
             num_temporal_tokens=num_temporal_tokens,
         )
-        self.temporal_projector = TemporalProjector(temporal_dim, hidden_size)
+        output_scale = (
+            self.embedding_norm(llm) / hidden_size**0.5 if match_embedding_scale else None
+        )
+        self.temporal_projector = TemporalProjector(temporal_dim, hidden_size, output_scale)
         self.num_temporal_tokens = num_temporal_tokens
+
+    @staticmethod
+    def embedding_norm(llm: nn.Module) -> float:
+        """Mean L2 norm of the LLM's input embeddings, the scale to match."""
+        weight = llm.get_input_embeddings().weight
+        return float(weight.detach().float().norm(dim=-1).mean())
 
     @property
     def input_device(self) -> torch.device:

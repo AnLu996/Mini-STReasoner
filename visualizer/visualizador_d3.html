@@ -70,7 +70,7 @@ svg{display:block}
 .main{flex:1;min-width:0;min-height:0;display:flex}
 .dash{flex:1;min-height:0;display:grid;gap:9px;padding:10px 11px;grid-template-columns:repeat(3,1fr);grid-template-rows:auto auto minmax(220px,1fr) minmax(255px,1fr);overflow-y:auto}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 12px;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 2px rgba(60,52,38,.10),0 3px 8px rgba(60,52,38,.06)}
-.card.v1,.card.v4{grid-column:1 / -1}
+.card.v1,.card.v4,.card.v6{grid-column:1 / -1}
 
 /* cabecera de identidad del caso (quién es este caso, qué se preguntó, qué se esperaba, qué respondió) */
 .casehdr{grid-column:1 / -1;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(60,52,38,.10)}
@@ -209,12 +209,22 @@ svg{display:block}
 /* celda de impacto exactamente 0 / por debajo del umbral de inactividad */
 .stab td.zero{font-family:var(--mono);text-align:center;background:repeating-linear-gradient(45deg,#f2efe6,#f2efe6 4px,#e8e4d9 4px,#e8e4d9 8px);color:#8a5a12;font-weight:600;border-radius:4px}
 
+/* V6 atención del encoder temporal */
+.card.v6 .body{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px}
+.attsvg{flex:1;min-height:110px;width:100%}
+.attverdict{flex:0 0 auto;border-radius:8px;padding:6px 10px;font-size:11.5px;line-height:1.45}
+.attverdict.flat{background:#fbe7e5;border:1px solid #d99a93;color:#8d2f26}
+.attverdict.sel{background:#e7f4ec;border:1px solid #a9d2bb;color:#1d6b45}
+.attverdict b{font-family:var(--mono)}
+.attlegend{flex:0 0 auto;display:flex;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:9px;color:var(--dim)}
+.attlegend .it{display:flex;align-items:center;gap:5px}.attlegend .sw{width:11px;height:3px;border-radius:2px}
+
 @media(max-width:1100px){
   html,body{overflow:auto}
   body{flex-direction:column}
   .sidebar{flex:0 0 auto;width:auto;border-right:none;border-bottom:1px solid var(--line)}
   .dash{grid-template-columns:repeat(2,1fr);grid-template-rows:none;grid-auto-rows:minmax(300px,auto)}
-  .card.v1,.card.v4{grid-column:1 / -1}
+  .card.v1,.card.v4,.card.v6{grid-column:1 / -1}
 }
 </style>
 </head>
@@ -320,6 +330,22 @@ svg{display:block}
         <div class="cflans" id="cflSigAns"></div>
         <div class="rellegend" id="cflLegend"></div>
         <div class="occstrip" id="occStrip"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- V6 -->
+  <div class="card v6" id="cardV6" style="display:none">
+    <div class="head"><span class="vtag">V6</span><h2>Atención del encoder temporal</h2>
+      <span class="scnchip base">qué mira el modelo</span>
+    </div>
+    <div class="sub" id="v6sub"></div>
+    <div class="body">
+      <svg class="attsvg" id="attSvg"></svg>
+      <div class="attverdict" id="attVerdict"></div>
+      <div class="attlegend">
+        <div class="it"><span class="sw" style="background:var(--sig-mod)"></span>peso por ventana temporal</div>
+        <div class="it"><span class="sw" style="background:#b9b2a2"></span>referencia uniforme (no selecciona nada)</div>
       </div>
     </div>
   </div>
@@ -875,6 +901,60 @@ function renderQA(){const c=selCase(),scn=SCN(state.scenario);
     UNCLEAR:"Señales mixtas: la dominancia no es concluyente."}[cd]||"";
   vd.html(`<div class="vlevel">${cd}</div><div class="vexpl">${expl} <b>D_text=${c.text_share==null?"—":c.text_share.toFixed(2)}</b></div>`);}
 
+/* =================== V6 · atención del encoder temporal =================== */
+/* El encoder devuelve una matriz [tokens, T] con el peso que cada consulta aprendida
+   pone en cada paso de la serie. Es la única evidencia directa de QUÉ TRAMO mira el
+   modelo. Se compara siempre contra la referencia uniforme: si el perfil es plano, el
+   pooling degenera en un promedio y el encoder no está seleccionando nada. */
+function renderAttention(){
+  const c=selCase(),att=c.encoder_attention,card=d3.select("#cardV6");
+  if(!att||!att.profile||!att.profile.length){card.style("display","none");return;}
+  card.style("display","flex");
+  const prof=att.profile,bins=prof.length,uniform=1/bins;
+  const ent=att.entropy||[],meanEnt=ent.length?d3.mean(ent):null,minEnt=ent.length?d3.min(ent):null;
+
+  d3.select("#v6sub").html(
+    `${att.tokens} tokens temporales sobre ${att.steps} pasos, agrupados en ${bins} ventanas. `+
+    `Entropía 1.00 = reparte el peso por igual (promedia todo) · 0.00 = mira un solo instante.`);
+
+  const svg=d3.select("#attSvg");svg.selectAll("*").remove();
+  const [W,H]=dims(svg),m={t:8,r:8,b:16,l:8};
+  const x=d3.scaleLinear().domain([0,bins]).range([m.l,W-m.r]);
+  const y=d3.scaleLinear().domain([0,Math.max(d3.max(prof),uniform*1.6)]).range([H-m.b,m.t]);
+
+  svg.append("line").attr("x1",m.l).attr("x2",W-m.r).attr("y1",y(uniform)).attr("y2",y(uniform))
+     .attr("stroke","#b9b2a2").attr("stroke-width",1.5).attr("stroke-dasharray","4 3");
+
+  const bw=(W-m.l-m.r)/bins;
+  svg.selectAll("rect.att").data(prof).join("rect").attr("class","att")
+    .attr("x",(d,i)=>x(i)+0.6).attr("width",Math.max(1,bw-1.2))
+    .attr("y",d=>y(d)).attr("height",d=>Math.max(0,y(0)-y(d)))
+    .attr("rx",1.5)
+    .attr("fill",d=>d>=uniform?"var(--sig-mod)":"#cfd8d6")
+    .style("cursor","pointer")
+    .on("mousemove",(ev,d)=>{const i=prof.indexOf(d);
+      showTip(ev,`ventana <b>${i+1}/${bins}</b><br>peso <b>${d.toFixed(4)}</b><br>uniforme sería ${uniform.toFixed(4)}<br>razón <b>${(d/uniform).toFixed(2)}×</b>`);})
+    .on("mouseleave",hideTip);
+
+  svg.append("text").attr("x",m.l).attr("y",H-4).attr("fill","var(--faint)")
+     .attr("font-family","var(--mono)").attr("font-size",8).text("inicio de la señal");
+  svg.append("text").attr("x",W-m.r).attr("y",H-4).attr("text-anchor","end").attr("fill","var(--faint)")
+     .attr("font-family","var(--mono)").attr("font-size",8).text("fin");
+
+  const peak=d3.max(prof),ratio=peak/uniform;
+  // Un pico que no llega a ~1.5x el uniforme no es selección: es ruido sobre un promedio.
+  const flat=ratio<1.5&&(meanEnt==null||meanEnt>0.99);
+  const vd=d3.select("#attVerdict").attr("class","attverdict "+(flat?"flat":"sel"));
+  vd.html(flat
+    ? `<b>La atención no selecciona ningún tramo.</b> El peso máximo es <b>${ratio.toFixed(2)}×</b> el uniforme`
+      +(meanEnt!=null?` y la entropía media es <b>${meanEnt.toFixed(4)}</b>`:``)
+      +`: el pooling equivale a promediar toda la señal, de modo que el contenido frecuencial se pierde antes de llegar al LLM.`
+    : `<b>La atención se concentra en tramos concretos.</b> El peso máximo es <b>${ratio.toFixed(2)}×</b> el uniforme`
+      +(meanEnt!=null?`, con entropía media <b>${meanEnt.toFixed(4)}</b>`:``)
+      +(minEnt!=null?` y el token más enfocado en <b>${minEnt.toFixed(4)}</b>`:``)
+      +`. El encoder está eligiendo qué parte de la serie leer.`);
+}
+
 /* =================== sidebar =================== */
 function renderSidebar(){const c=selCase();const share=c.text_share==null?0.5:c.text_share;
   const m=d3.select("#domMeter");m.html("");m.append("div").attr("class","seg-t").style("width",(share*100)+"%");m.append("div").attr("class","seg-s").style("width",((1-share)*100)+"%");
@@ -915,7 +995,7 @@ function renderAll(){const c=selCase(),scn=SCN(state.scenario);
   d3.select("#v1chip").attr("class","scnchip "+scn.cls).text(scn.label);
   renderCaseHdr();
   renderScenarioBar();renderFlow();animExplain();
-  renderStageTable();renderEmb();renderV4();renderQA();renderSidebar();renderCaseTable();}
+  renderStageTable();renderEmb();renderV4();renderQA();renderAttention();renderSidebar();renderCaseTable();}
 function navTo(delta){const sc=scope();if(!sc.length)return;let i=sc.findIndex(s=>s.case_id===state.selId);if(i<0)i=0;i=(i+delta+sc.length)%sc.length;state.selId=sc[i].case_id;state.v4word=null;state.occSel=null;resetAnim();renderAll();}
 d3.select("#prevS").on("click",()=>navTo(-1));
 d3.select("#nextS").on("click",()=>navTo(1));

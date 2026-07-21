@@ -629,8 +629,21 @@ def build_viz_payload(cases: list[dict[str, Any]], summary: dict[str, Any]) -> d
         if mode == "internal"
         else f"Contrafactual global · {len(cases)} casos · solo sensibilidad de salida"
     )
+    with_attention = [c for c in cases if c.get("encoder_attention", {}).get("entropy")]
+    attention_meta = None
+    if with_attention:
+        entropies = [e for c in with_attention for e in c["encoder_attention"]["entropy"]]
+        bins = with_attention[0]["encoder_attention"].get("bins") or 1
+        attention_meta = {
+            "n": len(with_attention),
+            "bins": bins,
+            "uniform": 1.0 / bins,
+            "mean_entropy": sum(entropies) / len(entropies),
+            "min_entropy": min(entropies),
+        }
     return {
-        "meta": {"mode": mode, "metric": summary["metric"], "n": len(cases), "note": note},
+        "meta": {"mode": mode, "metric": summary["metric"], "n": len(cases), "note": note,
+                 "attention": attention_meta},
         "thresholds": TRACING_THRESHOLDS,
         "stage_summary": summary["stages"],
         "amplification": summary["amplification"],
@@ -667,6 +680,9 @@ def parse_args() -> argparse.Namespace:
                         default=PROJECT_ROOT / "outputs/tracing/stage_sensitivity_summary.json")
     parser.add_argument("--viz_output", type=Path, default=PROJECT_ROOT / "visualizer/tracing_data.js",
                         help="Archivo window.TRACING_DATA para el visualizador (vacio = omitir)")
+    parser.add_argument("--encoder_attention", type=Path,
+                        help="Salida de xai/attention_export.py; adjunta a cada caso el perfil "
+                             "de atencion temporal del encoder para la vista V6")
     parser.add_argument("--attributions", type=Path,
                         default=PROJECT_ROOT / "outputs/ecgqa_small/attributions.jsonl",
                         help="Saliencia por gradiente (compute_attributions_small.py) para los pesos "
@@ -701,6 +717,17 @@ def main() -> None:
                     attributions[rec["id"]] = rec
         print(f"Saliencia por gradiente cargada para V4: {len(attributions)} casos", flush=True)
 
+    # Atencion temporal del encoder (xai/attention_export.py). Responde, por caso,
+    # que parte de la serie mira el modelo; sin ella la vista V6 queda oculta.
+    encoder_attention: dict[str, Any] = {}
+    if args.encoder_attention and args.encoder_attention.exists():
+        with args.encoder_attention.open(encoding="utf-8") as af:
+            for line in af:
+                if line.strip():
+                    rec = json.loads(line)
+                    encoder_attention[str(rec.get("id"))] = rec
+        print(f"Atencion del encoder cargada para V6: {len(encoder_attention)} casos", flush=True)
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     cases: list[dict[str, Any]] = []
     count = 0
@@ -729,6 +756,16 @@ def main() -> None:
                     case["sig"]["feat_source"] = "saliencia por gradiente"
             else:
                 case.setdefault("sig", {})["feat_source"] = "proxy de energia"
+            att = encoder_attention.get(str(row.get("id")))
+            if att:
+                case["encoder_attention"] = {
+                    "bins": att.get("bins"),
+                    "steps": att.get("steps"),
+                    "tokens": att.get("tokens"),
+                    "profile": att.get("mass_profile"),
+                    "per_token": att.get("attention_binned"),
+                    "entropy": att.get("token_entropy"),
+                }
             cases.append(case)
             handle.write(json.dumps(case, ensure_ascii=False) + "\n")
             handle.flush()

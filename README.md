@@ -303,7 +303,33 @@ V4  Comparación contrafactual local    segun el escenario activo: ECG original 
                                        (resaltando palabras modificadas, clicables). Muestra si la respuesta
                                        cambio. No es atribucion causal.
 V5  Pregunta-respuesta contrafactual   original/esperada/pregunta-modif/ECG-modif/neutral/conflicto + clase de dominancia.
+V6  Atencion del encoder temporal      peso que el encoder pone en cada ventana de la senal, contra la
+                                       referencia uniforme. Responde "que parte de la serie mira el modelo".
 ```
+
+### V6 · atencion del encoder temporal
+
+El encoder devuelve una matriz `[tokens, T]` con el peso que cada consulta aprendida pone en cada paso de la serie. Nunca se guardaba, y es la unica evidencia directa de que tramo lee el modelo. `xai/attention_export.py` la persiste y la agrupa en ventanas:
+
+```bash
+python xai/attention_export.py \
+  --model-path checkpoints/ecgqa_5k_control \
+  --data data/ecgqa_5k/processed_test.jsonl --data-format ecgqa \
+  --output outputs/ecgqa_5k_control/encoder_attention.jsonl --bins 50
+```
+
+El panel compara el perfil contra la referencia uniforme (`1/bins`) y emite un veredicto explicito: si el pico no llega a 1,5 veces el uniforme y la entropia media supera 0,99, el pooling equivale a promediar toda la senal y el encoder no esta seleccionando nada. Sobre las corridas de ECG-QA el veredicto separa las dos sin ambiguedad: 100 de 100 casos planos en Corrida A, 100 de 100 selectivos en Corrida B.
+
+Para adjuntar la atencion a un trazado ya calculado, sin repetir la inferencia:
+
+```bash
+python scripts/rebuild_tracing_viz.py \
+  --tracing outputs/tracing/representational_tracing_occlusion.jsonl \
+  --encoder-attention outputs/ecgqa_5k_control/encoder_attention.jsonl \
+  --viz-output visualizer/tracing_data.js
+```
+
+`xai/representational_tracing.py` tambien acepta `--encoder_attention` para hacer la fusion durante la corrida.
 
 Interactividad (todo sobre datos precomputados, sin recalcular el modelo):
 

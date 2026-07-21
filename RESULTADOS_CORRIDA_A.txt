@@ -428,6 +428,17 @@ CONSECUENCIAS PARA EL PAPER
   Esto es exactamente el tipo de objecion que un revisor Q3 detecta y que
   hundiria el articulo. Es mucho mejor haberlo encontrado ahora.
 
+ESTADO: RESUELTO. Ver RESULTADOS_FASE2_RECALIBRACION.txt (2026-07-21), que
+  re-mide esta misma corrida con oclusion temporal como contrafactual primario.
+  Resumen de lo que cambio:
+    - ECFR por oclusion 0,1500 frente a 0,0100 por ruido; el 0,0638 reportado
+      aqui era el promedio de cuatro intervenciones no comparables.
+    - D_texto global baja de 0,2163 a 0,1300.
+    - En single-choose D_texto cambia de signo (+0,0288 -> -0,0769).
+    - El impacto de ECG del trazado interno deja de ser cero en las cinco
+      etapas (0,0964 en el encoder, 0,1236 en la fusion): la Tabla IV del
+      articulo y la seccion 7 de este documento hay que releerlas desde alli.
+
 QUE HACER (propuesta, pendiente de decision)
   a) Calibrar la intervencion de ECG por MAGNITUD DE EFECTO, no por parametro
      fijo: elegir el nivel de ruido que produzca en la representacion un

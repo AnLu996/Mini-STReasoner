@@ -1,0 +1,231 @@
+================================================================================
+FASE 2 · RECALIBRACION DEL CONTRAFACTUAL DE ECG
+Mini-STReasoner · corrida ecgqa_5k_control (Corrida A) re-medida
+================================================================================
+
+Generado: 2026-07-21
+Antecedente: RESULTADOS_CORRIDA_A.txt, seccion 9
+Artefactos:  outputs/ecgqa_5k_control/counterfactual_recalibrated.json
+             outputs/tracing/representational_tracing_occlusion.jsonl
+             outputs/tracing/stage_sensitivity_summary_occlusion.json
+
+QUE SE CORRIGE
+  La seccion 9 de RESULTADOS_CORRIDA_A.txt identifico que la perturbacion de ECG
+  por ruido gaussiano de media cero se cancela en el pooling atencional del
+  encoder, de modo que ECFR, D_texto y los impactos internos quedaban sesgados a
+  la baja por construccion. Se marco como bloqueante para publicar.
+
+  Este documento cierra ese bloqueante. NO reemplaza a RESULTADOS_CORRIDA_A.txt:
+  aquel conserva el registro de lo que se midio originalmente, y este reporta la
+  misma corrida con la intervencion recalibrada.
+
+  >>> DOS RESULTADOS OBLIGAN A REESCRIBIR PARTES DEL ARTICULO. La seccion 3
+  >>> cambia el signo de la dominancia en un subgrupo; la seccion 4 invalida la
+  >>> Tabla IV completa y la lectura de que "la senal ECG no participa".
+
+  NO SE REENTRENO NADA. Es el mismo checkpoint y el mismo conjunto de test.
+
+
+================================================================================
+1. EL DEFECTO, MEDIDO
+================================================================================
+
+  ECFR nunca fue una intervencion: es el PROMEDIO de cuatro. Desglosado sobre
+  las mismas 200 predicciones ya guardadas por Corrida A:
+
+    intervencion de ECG          tasa de cambio de respuesta
+    oclusion temporal (25%)                          0,1500
+    mascara de derivaciones (25%)                    0,0900
+    ruido gaussiano (8% de sigma)                    0,0100
+    spike                                            0,0050
+
+  Las cuatro difieren en un orden de magnitud entre extremos. Promediarlas hace
+  que dos intervenciones practicamente inertes arrastren a la baja el promedio.
+
+  VALIDACION CRUZADA. El 0,1500 de la oclusion coincide con el 0,143 del test de
+  ventanas temporales de la seccion 7 de Corrida A (43 de 300 ventanas cambian
+  la respuesta). Son dos medidas independientes de la misma cantidad, calculadas
+  por caminos distintos, y concuerdan.
+
+  Las dos intervenciones estructuradas -oclusion y mascara de derivaciones-
+  eliminan estructura; las dos debiles la perturban sin quitarla. El pooling
+  atencional promedia sobre 1000 pasos, asi que cancela el ruido de media cero y
+  diluye un spike puntual, pero no puede reconstruir un tramo puesto a cero.
+
+
+================================================================================
+2. METRICAS GLOBALES RECALIBRADAS (n=200)
+================================================================================
+
+    conjunto de intervenciones      QCFR     ECFR   D_texto
+    todas (como en Corrida A)     0,2800   0,0638    0,2163
+    estructuradas                 0,2800   0,1200    0,1600
+    solo oclusion temporal        0,2800   0,1500    0,1300
+
+  QCFR no cambia: la intervencion textual no se toco. El indice de dominancia
+  textual baja de 0,2163 a 0,1300, es decir un 40%, solo por elegir una
+  intervencion de ECG comparable en fuerza a la textual.
+
+  RECOMENDACION PARA EL ARTICULO. Reportar las tres filas, no una. La leccion
+  metodologica -que las metricas de dominancia por perturbacion son sensibles a
+  la calibracion de la intervencion, algo que la literatura citada no discute-
+  es mas valiosa que cualquiera de los tres numeros por separado. Es la opcion
+  (c) que ya proponia la seccion 9 de Corrida A.
+
+
+================================================================================
+3. POR TIPO DE PREGUNTA: UN SUBGRUPO CAMBIA DE SIGNO
+================================================================================
+
+    tipo de pregunta                n    todas   estruct.   oclusion
+    single-query                   47   0,4362     0,4043     0,4043
+    comparison_irrelevant-query    62   0,3145     0,2016     0,1290
+    comparison_irrelevant-verify   22   0,0000     0,0000     0,0000
+    single-verify                  30  -0,0083    -0,0167    -0,0333
+    single-choose                  26   0,0288    -0,0577    -0,0769
+
+  (D_texto; grupos con n>=10)
+
+  DOS LECTURAS OPUESTAS
+
+  a) single-query es ROBUSTO: 0,4362 con las cuatro y 0,4043 con oclusion. La
+     dominancia textual en las consultas abiertas se sostiene con cualquier
+     calibracion. Es el subgrupo sobre el que la tesis puede afirmar con
+     seguridad.
+
+  b) single-choose CAMBIA DE SIGNO: +0,0288 con las cuatro, -0,0769 con
+     oclusion. Con la intervencion debil parecia textualmente dominante; con una
+     comparable, la respuesta resulta MAS sensible al ECG que al texto. La
+     afirmacion sobre ese subgrupo dependia enteramente del artefacto.
+
+  comparison_irrelevant-query cae un 59% (0,3145 -> 0,1290) sin cambiar de
+  signo. Los dos subgrupos de verificacion siguen insensibles a ambas
+  modalidades, como ya reportaba Corrida A.
+
+
+================================================================================
+4. TRAZADO REPRESENTACIONAL INTERNO: LA TABLA IV NO SE SOSTIENE
+================================================================================
+
+  Re-ejecucion sobre los mismos 50 casos, misma metrica (coseno), cambiando solo
+  la intervencion del escenario ecg_cf de ruido a oclusion temporal.
+
+    etapa                RUIDO (Corrida A)              OCLUSION (recalibrado)
+                    texto      ECG     delta        texto      ECG      delta
+    Encoder           n/d   0,0000       n/d          n/d   0,0964        n/d
+    Proyector         n/d   0,0000       n/d          n/d   0,1238        n/d
+    Fusion         0,0001   0,0000    0,0000       0,0001   0,1236    -0,1235
+    LLM            0,0219   0,0000    0,0219       0,0219   0,0195    +0,0024
+    Salida         0,0165   0,0000    0,0165       0,0165   0,0013    +0,0152
+
+  QUE CAMBIA
+
+  a) El impacto del ECG deja de ser CERO EXACTO en las cinco etapas. Era el
+     hallazgo mas llamativo de Corrida A y era un artefacto completo. Con una
+     intervencion estructurada el ECG mueve la representacion 0,096 en el
+     encoder y 0,124 en el proyector.
+
+  b) EL SIGNO SE INVIERTE EN LA FUSION. La diferencia texto-ECG pasa de +0,0000
+     a -0,1235: en inputs_embeds la representacion es MUCHO mas sensible al ECG
+     que al texto. El articulo afirma que "la diferencia texto-ECG es
+     practicamente nula en la fusion"; con la medicion correcta es fuertemente
+     favorable al ECG.
+
+  c) En el LLM la diferencia queda practicamente equilibrada (+0,0024 frente a
+     +0,0219), y la dominancia textual solo reaparece en la salida (+0,0152).
+
+  LA LOCALIZACION CORRECTA. El ECG entra fuerte y se DESTRUYE dentro del LLM:
+
+      fusion 0,1236  ->  LLM 0,0195  ->  salida 0,0013
+
+  es decir, una reduccion de casi dos ordenes de magnitud, mientras el impacto
+  del texto se mantiene estable (0,0001 -> 0,0219 -> 0,0165). La etapa de
+  amplificacion sigue siendo el LLM, pero por el motivo CONTRARIO al que se
+  reporto: no porque el peso del texto crezca, sino porque el del ECG colapsa.
+  El salto medido pasa de 0,0219 a 0,1259.
+
+  d) Clasificacion de casos:
+
+       clase             ruido   oclusion
+       TEXT_DOMINANT        46         41
+       ECG_DOMINANT          0          3
+       BALANCED              0          3
+       INSENSITIVE           4          3
+       UNCLEAR               0          0
+
+     Aparecen por primera vez casos ECG_DOMINANT y BALANCED. El "30/30" o
+     "46/50 TEXT_DOMINANT" pasa a 41/50 (82%).
+
+
+================================================================================
+5. QUE HAY QUE CAMBIAR EN EL ARTICULO
+================================================================================
+
+  OBLIGATORIO
+  1. Tabla IV completa (trazado interno por etapa). Todos los impactos de ECG
+     eran cero por artefacto.
+  2. Seccion VI-J. La frase de que el desbalance "se manifiesta desde la fusion
+     y se amplifica en el LLM" hay que rehacerla: en la fusion el desbalance
+     favorece al ECG, y lo que ocurre en el LLM es que la senal se pierde.
+  3. Cualquier afirmacion de que "la senal ECG no participa" o de que "el
+     componente multimodal esta presente pero no en la decision". Con ECFR =
+     0,1500 y un impacto de 0,124 en la fusion, participa.
+  4. Los valores de ECFR (0,000 en la version previa, 0,0638 en Corrida A) y de
+     D_texto que dependan de ellos.
+
+  RECOMENDADO
+  5. Reportar las tres calibraciones (seccion 2) y presentar la sensibilidad a
+     la calibracion como contribucion metodologica propia.
+  6. Reportar D_texto por tipo de pregunta (seccion 3) y senalar explicitamente
+     el cambio de signo de single-choose.
+
+  SE MANTIENE
+  7. La ablacion modal no esta afectada: no_series elimina la modalidad entera
+     en vez de perturbarla, asi que cont_ECG sigue siendo una medida limpia.
+  8. El test de oclusion temporal de la seccion 7 de Corrida A tampoco: ya usaba
+     una intervencion estructurada, y ahora ademas concuerda con el ECFR
+     recalibrado.
+  9. La prueba de la pregunta neutral y QCFR: la intervencion textual no se
+     modifico.
+
+
+================================================================================
+6. LO QUE QUEDA PENDIENTE DE ESTA FASE
+================================================================================
+
+  1. Calibrar por MAGNITUD DE EFECTO, no solo elegir una intervencion mas
+     fuerte. La oclusion del 25% y la reescritura de la pregunta no tienen por
+     que producir desplazamientos representacionales comparables; mientras no se
+     igualen, QCFR y ECFR siguen sin ser estrictamente comparables. La opcion
+     (a) de la seccion 9 de Corrida A sigue abierta.
+  2. Intervalos de confianza sobre las cifras recalibradas (Fase 4 del plan).
+     Con n=200 y n=50 conviene acompanar cada valor de su intervalo antes de
+     apoyar conclusiones por subgrupo, sobre todo el cambio de signo de
+     single-choose, que se apoya en n=26.
+  3. Regenerar los datos del visualizador con el trazado recalibrado. El
+     archivo vivo visualizer/tracing_data.js sigue apuntando a la version con
+     ruido; la corrida con oclusion se escribio aparte para no pisarlo.
+
+
+================================================================================
+7. COMO REPRODUCIRLO
+================================================================================
+
+  # metricas contrafactuales recalibradas, sin repetir inferencia
+  python scripts/recalibrate_ecg_counterfactual.py \
+      --results outputs/ecgqa_5k_control/counterfactual_results.jsonl
+
+  # trazado interno con oclusion temporal
+  python xai/representational_tracing.py \
+      --model_path checkpoints/ecgqa_5k_control \
+      --data data/ecgqa_5k/processed_test.jsonl \
+      --max_samples 50 --metric cosine --ecg_transform ecg_cf_time_mask \
+      --output outputs/tracing/representational_tracing_occlusion.jsonl \
+      --summary_output outputs/tracing/stage_sensitivity_summary_occlusion.json
+
+  --ecg_transform acepta ecg_cf_time_mask (por defecto), ecg_cf_lead_mask,
+  ecg_cf_noise, ecg_cf_spike, ecg_cf_scaling y ecg_cf_shuffle.
+
+================================================================================
+FIN
+================================================================================

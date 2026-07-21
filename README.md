@@ -95,6 +95,57 @@ La ablacion compara `full`, `no_text`, `no_series` y `conflict_text`. La dominan
 
 Un valor positivo indica mayor dependencia del texto; uno negativo, mayor dependencia de la serie. `conflict_text` es una perturbacion base y debe especializarse segun la semantica de cada tarea para estudios causales rigurosos.
 
+## Validacion del escalamiento sobre ST-Bench
+
+Antes de confiar en los resultados obtenidos sobre ECG-QA conviene comprobar que la receta reducida (Qwen3-0.6B + encoder GRU + QLoRA) produce un modelo funcional sobre la tarea *original* del paper. Este flujo entrena un subconjunto acotado de ST-Bench y lo mide con el protocolo de evaluacion de STReasoner.
+
+```bash
+# 1. descarga (73 MB: solo ST-SFT y ST-Test)
+python -c "from huggingface_hub import snapshot_download; \
+  snapshot_download('Time-HD-Anonymous/ST-Bench', repo_type='dataset', \
+  local_dir='data/stbench_small/raw', allow_patterns=['ST-SFT/*','ST-Test/*'])"
+
+# 2. subconjuntos con muestreo por reservorio (semilla 42)
+python training/prepare_stbench.py --local-dir data/stbench_small/raw/ST-SFT \
+  --output-dir data/stbench_small/train --max-per-task 400 --seed 42
+python training/prepare_stbench.py --local-dir data/stbench_small/raw/ST-Test \
+  --output-dir data/stbench_small/test --max-per-task 60 --seed 42
+
+# 3. entrenamiento (6 GB, ~50 min en una RTX 4050)
+python training/train_sft_lora.py \
+  --processed-dir data/stbench_small/train \
+  --output-dir checkpoints/stbench_small_lora \
+  --input-dim 10 --batch-size 1 --gradient-accumulation-steps 8 \
+  --max-seq-length 512 --epochs 3
+
+# 4. evaluacion, linea base y ablacion
+bash run_stbench_validation.sh
+```
+
+`scripts/score_stbench.py` reemplaza a `inference/evaluate_tasks.py` para este dataset: puntua con el protocolo del paper (extraccion de `<answer>`, letra A-D para opcion multiple, MAE/MAPE para forecasting) en lugar de comparar cadenas normalizadas. `scripts/verify_scorer_against_paper.py` re-puntua las generaciones publicadas de STReasoner-8B y reproduce sus cuatro metricas exactamente, de modo que cualquier diferencia posterior sea atribuible al modelo y no al protocolo.
+
+Como el subconjunto de test es pequeno, `scripts/stbench_confidence.py` acompana cada accuracy con su intervalo de Wilson y cada contribucion modal con un intervalo bootstrap pareado.
+
+### Intervenciones sobre el contenido de la serie
+
+La ablacion por eliminacion (`no_series`) no es interpretable en este checkpoint: al retirar los tokens temporales el modelo pierde la senal que lo mantenia en el formato aprendido, revierte al comportamiento del Qwen3 base y agota el presupuesto de tokens sin emitir `<answer>`. Su accuracy mide un colapso de formato, no la contribucion de la modalidad.
+
+`scripts/stbench_series_intervention.py` evita ese problema sustituyendo el *contenido* de la serie y dejando los cuatro tokens temporales en su sitio:
+
+```bash
+python scripts/stbench_series_intervention.py \
+  --model-path checkpoints/stbench_small_lora \
+  --task reasoning_correlation --limit 30
+```
+
+```text
+original   la serie propia de la muestra
+swapped    la serie de otra muestra, misma pregunta
+zeroed     una serie de ceros, misma pregunta
+```
+
+Si la respuesta no cambia entre las tres condiciones, no depende de la evidencia temporal. Los resultados de la corrida estan en [`RESULTADOS_STBENCH_VALIDACION.txt`](RESULTADOS_STBENCH_VALIDACION.txt).
+
 ## Prueba controlada ECG-QA (subconjunto pequeno)
 
 Pipeline reproducible para obtener resultados preliminares con senales ECG reales de PTB-XL sin descargar todo ECG-QA ni MIMIC-IV-ECG. Trabaja por etapas, usa `seed=42` y guarda logs y resultados intermedios en `outputs/ecgqa_small/`.

@@ -1,0 +1,393 @@
+================================================================================
+VALIDACION DEL ESCALAMIENTO SOBRE ST-BENCH (dataset original del paper)
+Mini-STReasoner · Qwen3-0.6B + encoder GRU + QLoRA · RTX 4050 Laptop 6 GB
+================================================================================
+
+Generado: 2026-07-20
+Artefactos:  outputs/stbench_small/
+Checkpoint:  checkpoints/stbench_small_lora/
+Datos:       data/stbench_small/
+Pipeline:    run_stbench_validation.sh
+
+PROPOSITO
+  Las corridas anteriores (ecgqa_small, ecgqa_5k_control) adaptaron la
+  arquitectura a ECG-QA sin haber probado antes que la RECETA DE ESCALAMIENTO
+  funcione sobre la tarea original de STReasoner. Esta corrida cierra ese hueco:
+  entrena la version reducida sobre ST-Bench y la mide con el protocolo de
+  evaluacion del paper.
+
+  No busca igualar las cifras del paper por la via de reproducir su computo
+  (8xA100, Qwen3-8B, tres etapas con S-GRPO). Busca responder una pregunta
+  binaria: ¿la receta reducida produce un modelo funcional en la tarea original,
+  o el camino multimodal ya estaba roto antes de cambiar de dataset?
+
+  >>> LEER LA SECCION 7. El resultado principal no es la accuracy: es que la
+  >>> accuracy se obtiene SIN USAR la serie temporal, tambien en ST-Bench.
+
+
+================================================================================
+1. CONFIGURACION EXPERIMENTAL
+================================================================================
+
+Hardware:            NVIDIA GeForce RTX 4050 Laptop GPU (6.141 MiB)
+                     Uso maximo observado: 5.486 MiB (89% de ocupacion)
+Modelo base:         Qwen/Qwen3-0.6B (hidden_size 1024)
+Cuantizacion:        QLoRA NF4, doble cuantizacion, compute dtype float16
+LoRA:                r=8, alpha=16, dropout=0.05, bias=none
+                     target_modules = q_proj, k_proj, v_proj, o_proj
+
+Codificador temporal (identico al de la corrida ECG-QA de control):
+  input_dim            10  (maximo de nodos en ST-Bench; las series con 3 o 5
+                            nodos se rellenan con ceros)
+  hidden_dim           128
+  temporal_dim         256
+  num_temporal_tokens  4
+  num_layers           1 (bidireccional)
+  pooling              atencional, 4 token queries aprendidas
+
+Proyector latente:   Linear(256, 1024) -> GELU -> Linear(1024, 1024) -> LayerNorm
+
+Optimizacion:
+  optimizador          AdamW
+  learning rate        2e-4  (constante; este script no tiene scheduler)
+  batch size           1
+  grad accumulation    8
+  pasos por epoca      200
+  epocas               3   (600 pasos de optimizacion, 4.800 micro-pasos)
+  max_seq_len          512
+  clip grad norm       1.0
+
+  NOTA: train_sft_lora.py no implementa validacion por epoca, early stopping ni
+  seleccion de checkpoint. Se guarda el modelo de la ultima epoca. Estas
+  capacidades si existen en train_ecgqa_lora_small.py y son la mejora pendiente
+  numero 1 para cualquier corrida ST-Bench posterior.
+
+
+================================================================================
+2. DATOS
+================================================================================
+
+Fuente:  HuggingFace Time-HD-Anonymous/ST-Bench
+         ST-SFT/*.jsonl  (entrenamiento)  ·  ST-Test/*.jsonl  (evaluacion)
+Muestreo: reservorio determinista, semilla 42, sobre los archivos completos
+          (training/prepare_stbench.py --max-per-task)
+
+                        entrenamiento    test     universo disponible (train)
+  reasoning_correlation           400      60      2.941
+  reasoning_entity                400      60      2.284
+  reasoning_etiological           400      60        406
+  reasoning_forecasting           400      60        582
+  TOTAL                         1.600     240      6.213
+
+Formato de la serie: [tiempo x variables] tras transposicion. El numero de
+variables es 3, 5 o 10 segun la muestra; la longitud temporal va de 32 a 480
+pasos. El colador rellena con ceros hasta input_dim=10 y enmascara el tiempo.
+
+FUGA ENTRE PARTICIONES - VERIFICADA EMPIRICAMENTE
+  Solapamiento exacto del texto de entrada train/test:      0 en las 4 tareas
+  Solapamiento exacto de las series temporales train/test:  0 en las 4 tareas
+  (hash SHA-1 del campo de texto y del campo time_series)
+
+  Las particiones ST-SFT y ST-Test del dataset original son disjuntas. Ningun
+  resultado de esta corrida se explica por memorizacion del conjunto de test.
+
+INTERLEAVING DE TAREAS
+  El loader leia los cuatro archivos uno detras de otro, de modo que el
+  entrenamiento veia 400 muestras de una tarea, luego 400 de la siguiente. Eso
+  sesga el modelo hacia el ultimo bloque. El entrenamiento de referencia mezcla
+  las cuatro tareas con igual probabilidad (--interleave_probs 0.25 x4,
+  mix_strategy interleave_over). Se implemento round-robin en
+  STBenchIterableDataset y se descarto la primera corrida hecha con orden en
+  bloque. Cada ventana de acumulacion de 8 micro-pasos contiene ahora 2
+  muestras de cada tarea.
+
+
+================================================================================
+3. ENTRENAMIENTO
+================================================================================
+
+  Perdida registrada (una sola muestra por linea de log):
+    fin de epoca 1                 0,1027
+    epoca 2   mediana 0,0515   min 0,0005   max 1,3705
+    epoca 3   mediana 0,0202   min 0,0003   max 1,3384
+    ultimo valor registrado        0,0021
+
+  DOS LIMITACIONES DEL LOG DE ESTA CORRIDA (ambas ya corregidas en el codigo,
+  no en los datos de esta corrida):
+
+  a) El valor impreso es la perdida del ULTIMO micro-lote de cada ventana, no
+     un promedio. Con cuatro tareas interleavadas y acumulacion de ocho, el
+     indice del ultimo micro-lote es siempre multiplo de 4, de modo que TODAS
+     las perdidas registradas provienen de reasoning_forecasting. El log no
+     dice nada sobre las otras tres tareas.
+     -> train_sft_lora.py ahora promedia sobre la epoca y lo reporta aparte.
+
+  b) tqdm escribe la barra de progreso de carga de pesos en stderr con retornos
+     de carro; al fusionar stderr con stdout las escrituras se entrelazaron y
+     se perdieron las lineas de la epoca 1 anteriores al paso 200.
+
+  LECTURA. La distribucion bimodal de la epoca 3 (mediana 0,0202 pero maximo
+  1,3384) describe bien lo que ocurre: sobre la mayoria de las muestras de
+  forecasting la perdida es practicamente nula, mientras un subconjunto
+  permanece en torno a 1,0-1,4. Ese subconjunto es el de respuestas con
+  arreglos numericos largos, que el modelo nunca aprende a emitir (seccion 5).
+  La evidencia decisiva de convergencia no es esta curva sino la seccion 4.
+
+
+================================================================================
+4. DESEMPENO PREDICTIVO (test, 60 muestras por tarea)
+================================================================================
+
+Protocolo de evaluacion: el del paper (evaluation/evaluate_qa.py). Se extrae el
+contenido de <answer>...</answer> y se reduce a una letra A-D; forecasting se
+parsea como serie numerica y se puntua con MAE/MAPE.
+
+VERIFICACION DEL EVALUADOR
+  scripts/verify_scorer_against_paper.py re-puntua las generaciones publicadas
+  de STReasoner-8B (exp_STReasoner-8B/*/generated_answer.json) con nuestro
+  evaluador y reproduce sus cuatro metricas publicadas de forma exacta:
+
+    tarea                        nuestro evaluador     publicado
+    reasoning_correlation              0,871231156   0,871231156
+    reasoning_entity                   0,757118928   0,757118928
+    reasoning_etiological              0,956521739   0,956521739
+    reasoning_forecasting (MAE)       65,593473638  65,593473638
+
+  Esto fija la linea de comparacion: cualquier diferencia posterior proviene del
+  modelo, no de un protocolo de evaluacion distinto.
+
+RESULTADO
+
+  tarea                     Mini-0.6B    IC 95% (Wilson)    STReasoner-8B   azar
+  reasoning_correlation        0,9333   [0,8407 · 0,9738]         0,8712    0,25
+  reasoning_entity             0,8333   [0,7197 · 0,9069]         0,7571    0,25
+  reasoning_etiological        0,9667   [0,8864 · 0,9908]         0,9565    0,25
+  reasoning_forecasting     MAE 651,97          (n=57, cob. 0,95)  MAE 65,59   -
+                            MAPE 2.376%
+
+  El valor publicado del modelo de 8B cae DENTRO del intervalo de confianza del
+  95% en las tres tareas de opcion multiple. La lectura correcta no es que el
+  modelo reducido sea mejor, sino que con 60 muestras por tarea ambos son
+  ESTADISTICAMENTE INDISTINGUIBLES. Las tres accuracies estan muy por encima del
+  azar (0,25), con el limite inferior del intervalo por encima en los tres casos.
+
+  Tasa de respuestas parseables como letra A-D: 1,00 en las tres tareas.
+
+LINEA BASE SIN ENTRENAR (Qwen3-0.6B + modulos temporales sin ajustar, n=30)
+
+    reasoning_correlation      0,0000
+    reasoning_entity           0,0000
+    reasoning_etiological      0,0333
+    reasoning_forecasting      cobertura 0,00 (ninguna prediccion parseable)
+    media opcion multiple      0,0111
+
+  Ninguna de las 30 generaciones por tarea contiene la etiqueta <answer>. El
+  modelo base produce texto degenerado repetitivo ("REGISTRATIONISTRATION..."),
+  el mismo colapso descrito en la Seccion VI-B del articulo. Todo el desempeno
+  de la seccion anterior es atribuible al ajuste fino, no al prior del LLM.
+
+
+================================================================================
+5. FORECASTING: FALLO ESTRUCTURAL, NO DE PRECISION
+================================================================================
+
+  El MAE de 651,97 no mide un pronostico impreciso: mide un formato equivocado.
+
+    longitud de la respuesta predicha    1 valor: 56/60 · 0 valores: 3 · 3 valores: 1
+    longitud de la respuesta esperada    de 3 a 61 valores (mediana 3)
+    longitud correcta                    1/60
+
+  El modelo aprendio a emitir <answer>NUMERO</answer> pero no a emitir una
+  SECUENCIA. Con 4 tokens temporales y 400 muestras de entrenamiento no hay
+  capacidad para aprender la estructura de salida. Cualquier comparacion del MAE
+  contra el 65,59 del paper carece de sentido mientras el 93% de las respuestas
+  tenga la longitud equivocada.
+
+
+================================================================================
+6. ABLACION MODAL: LA MEDICION ESTANDAR NO ES VALIDA AQUI
+================================================================================
+
+  xai/modal_ablation.py, con su presupuesto por defecto de 150 tokens nuevos,
+  produjo (n=30 por tarea):
+
+    tarea                     full   no_text   no_series   conflict_text
+    reasoning_correlation    0,900     0,067       0,000           0,900
+    reasoning_entity         0,867     0,000       0,000           0,833
+    reasoning_etiological    1,000     0,067       0,000           1,000
+
+  Leido de forma literal esto daria cont_serie = 0,90 y dominancia textual
+  NEGATIVA, es decir, un modelo anclado en la senal. Es falso.
+
+  DIAGNOSTICO. Un valor de 0,000 esta por debajo del azar (0,25), lo que ya
+  indica que no se esta midiendo capacidad de respuesta sino otra cosa. La
+  inspeccion de las generaciones crudas de no_series lo confirma:
+
+    empiezan con <think>          30/30
+    contienen <answer>             0/30
+    longitud media                565 caracteres (truncadas por el limite)
+
+  Al retirar los tokens temporales desaparece tambien la senal que mantenia al
+  modelo en el formato aprendido durante el ajuste: revierte al comportamiento
+  del Qwen3 base, abre una cadena de razonamiento y agota el presupuesto de
+  tokens antes de emitir una respuesta. La accuracy de 0,000 mide un COLAPSO DE
+  FORMATO, no la contribucion de la modalidad.
+
+  Es el mismo genero de defecto que la seccion 9 de RESULTADOS_CORRIDA_A.txt,
+  con el signo invertido: alla la intervencion sobre el ECG era demasiado debil
+  para sobrevivir al pooling; aca la intervencion sobre la serie es demasiado
+  destructiva y rompe la tarea de generacion. En ambos casos la metrica de
+  dominancia hereda el sesgo de una intervencion mal calibrada.
+
+  >>> Consecuencia metodologica: la ablacion por ELIMINACION de una modalidad
+  >>> solo es interpretable si se verifica que el modelo sigue produciendo
+  >>> respuestas del formato esperado. Conviene reportar la tasa de respuestas
+  >>> parseables junto a toda ablacion. score_stbench_ablation.py ya lo hace.
+
+
+================================================================================
+7. RESULTADO PRINCIPAL: LA SERIE NO INTERVIENE EN LA RESPUESTA
+================================================================================
+
+  Para medir la contribucion de la modalidad sin romper el formato, se sustituye
+  el CONTENIDO de la serie manteniendo los cuatro tokens temporales en su lugar
+  (scripts/stbench_series_intervention.py, n=30 por tarea):
+
+    original   la serie propia de la muestra
+    swapped    la serie de otra muestra, misma pregunta
+    zeroed     una serie de ceros, misma pregunta
+
+  RESULTADO
+
+    tarea                    original   swapped   zeroed   flip swap   flip zero
+    reasoning_correlation      0,9000    0,9000   0,9000      0,0000      0,0000
+    reasoning_entity           0,8667    0,8667   0,8667      0,0000      0,0000
+    reasoning_etiological      1,0000    1,0000   1,0000      0,0000      0,0000
+
+  En las 90 muestras, NINGUNA respuesta cambia al sustituir la serie temporal
+  por la de otra muestra ni por una serie de ceros. La tasa de cambio es cero
+  exacto en las tres tareas.
+
+  La accuracy de la seccion 4 -indistinguible de la del modelo de 8B- se obtiene
+  integramente a partir del texto: el enunciado, la descripcion de la estructura
+  del grafo y las opciones.
+
+VERIFICACION DE QUE NO ES UN ERROR DE IMPLEMENTACION
+
+  Antes de sostener lo anterior hay que descartar que la serie simplemente no
+  llegue al modelo. Se midio el desplazamiento relativo de las representaciones
+  al sustituir la serie:
+
+    muestra   etapa        orig vs ceros   orig vs otra serie
+      0       encoder             0,6279               0,5286
+      0       proyector           0,0613               0,0572
+      1       encoder             0,0881               0,1222
+      1       proyector           0,0123               0,0231
+      2       encoder             0,2085               0,3312
+      2       proyector           0,0311               0,0601
+
+  La serie SI llega y SI mueve la representacion: el encoder reacciona entre un
+  9% y un 63%. El proyector atenua ese cambio en aproximadamente un orden de
+  magnitud, dejandolo entre 1,2% y 6,1%. Y a la salida del LLM el efecto es
+  exactamente nulo.
+
+  El punto de atenuacion es, por tanto, localizable: la variacion sobrevive al
+  encoder y se pierde entre el proyector y la decision del LLM. Cuatro tokens
+  desplazados un 1-6% entre unos 300 tokens de texto no alteran la respuesta.
+
+  Esto es consistente con -y refuerza- el diagnostico de la seccion 10 de
+  RESULTADOS_CORRIDA_A.txt: el cuello de botella es ARQUITECTONICO. La novedad
+  es que ahora se observa sobre el dataset ORIGINAL del paper, no solo sobre la
+  adaptacion a ECG-QA, y con una intervencion que no rompe el formato de salida.
+
+
+================================================================================
+8. VEREDICTO SOBRE EL ESCALAMIENTO
+================================================================================
+
+  ¿Es solida la receta reducida (Qwen3-0.6B + GRU 4 tokens + QLoRA r=8)?
+
+  SI, en lo que respecta al camino textual:
+    - converge sin inestabilidad en 6 GB de VRAM;
+    - alcanza en las tres tareas de opcion multiple una accuracy estadisticamente
+      indistinguible de la publicada para el modelo de 8B;
+    - parte de una linea base de 0,01 y llega a 0,91 de media, de modo que el
+      desempeno es atribuible al ajuste;
+    - no hay fuga entre particiones.
+
+  NO, en lo que respecta al camino multimodal:
+    - la respuesta es independiente del contenido de la serie (flip rate 0,000
+      sobre 90 muestras);
+    - el proyector atenua en un orden de magnitud la variacion que el encoder si
+      captura;
+    - forecasting, la unica tarea que exige leer la serie para responder, falla
+      estructuralmente (1/60 con la longitud correcta).
+
+  CONCLUSION OPERATIVA. Lo que se valido no es que el escalamiento reproduzca el
+  razonamiento espacio-temporal del paper, sino que reproduce su ACCURACY sin
+  ejercer ese razonamiento. Para el trabajo de tesis esto es favorable, no
+  adverso: significa que el fenomeno de dominancia textual que la tesis audita
+  no es un artefacto de la adaptacion a ECG-QA, sino que se manifiesta tambien
+  en el benchmark original con su propia arquitectura reducida.
+
+  ADVERTENCIA DE ALCANCE. Nada de esto demuestra que el modelo de 8B del paper
+  ignore la serie. Lo que demuestra es que estas accuracies son ALCANZABLES sin
+  leerla, de modo que la accuracy por si sola no evidencia razonamiento
+  espacio-temporal. Ese es exactamente el argumento de auditoria de la tesis, y
+  ahora tiene respaldo empirico sobre el benchmark de referencia.
+
+
+================================================================================
+9. LO QUE ESTA CORRIDA NO CUBRE
+================================================================================
+
+  1. n=60 por tarea (n=30 en ablacion e intervenciones). Los intervalos son
+     anchos. Ampliar a las particiones de test completas (1.592 / 1.194 / 207 /
+     280) es barato: solo inferencia, sin reentrenar.
+  2. Sin validacion por epoca ni seleccion de checkpoint: se guarda la ultima
+     epoca. Corrida A mostro que el mejor checkpoint ECG-QA fue el de la epoca 4
+     de 7, asi que la ultima epoca probablemente no es la mejor aqui tampoco.
+  3. Sin barrido de la capacidad del encoder. La corrida B prevista para ECG-QA
+     (32 tokens, 2 capas, hidden 256) deberia repetirse sobre ST-Bench: si la
+     atenuacion del proyector es el cuello de botella, es aqui donde se veria.
+  4. No se probo la etapa de alineacion (ST-Align) ni CoT (ST-CoT), que en el
+     paper preceden al razonamiento. El modelo se entreno directamente sobre
+     ST-SFT. Es posible que la alineacion sea justamente lo que hace que los
+     tokens temporales lleguen a pesar en la decision.
+  5. La intervencion "swapped" usa la serie de la muestra siguiente, que puede
+     tener otra forma. No se controlo por longitud ni por numero de nodos.
+
+
+================================================================================
+10. INVENTARIO DE ARTEFACTOS
+================================================================================
+
+outputs/stbench_small/
+  train.log                              log de entrenamiento
+  predictions_<tarea>.jsonl              4 x 60 predicciones de test
+  stbench_scores.json                    accuracy / MAE / MAPE, distribucion
+  baseline_predictions_<tarea>.jsonl     4 x 30 predicciones sin entrenar
+  stbench_scores_baseline.json           puntuacion de la linea base
+  ablation_<tarea>.jsonl                 4 x 30 x 4 condiciones (ver seccion 6)
+  stbench_ablation_scores.json           contribuciones modales (NO VALIDAS)
+  series_intervention_<tarea>.jsonl      3 x 30 x 3 condiciones
+  series_intervention_<tarea>_summary.json
+  stbench_confidence.json                intervalos de Wilson y bootstrap
+  pipeline.log · logs/                   salida de cada etapa
+
+data/stbench_small/
+  raw/ST-SFT · raw/ST-Test               descarga original (73 MB)
+  train/ · test/                         subconjuntos preparados
+
+checkpoints/stbench_small_lora/          checkpoint de la ultima epoca
+
+scripts/
+  score_stbench.py                       protocolo de evaluacion del paper
+  verify_scorer_against_paper.py         reproduce las cifras publicadas
+  score_stbench_ablation.py              contribuciones modales
+  stbench_series_intervention.py         intervenciones sobre el contenido
+  stbench_confidence.py                  intervalos de confianza
+
+================================================================================
+FIN
+================================================================================

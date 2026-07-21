@@ -20,6 +20,12 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=PROJECT_ROOT / "outputs/xai/modal_ablation_results.jsonl")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-new-tokens", type=int, default=150)
+    parser.add_argument(
+        "--modes",
+        nargs="*",
+        default=["full", "no_text", "no_series", "conflict_text"],
+        help="conditions to regenerate; drop some to spend the token budget on the rest",
+    )
     args = parser.parse_args()
     tokenizer, model, config = load_checkpoint(args.model_path)
     args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -29,7 +35,7 @@ def main() -> None:
             if args.limit and index >= args.limit:
                 break
             predictions = {}
-            for mode in ("full", "no_text", "no_series", "conflict_text"):
+            for mode in args.modes:
                 predictions[mode], _ = predict(tokenizer, model, config, example, mode, args.max_new_tokens)
             handle.write(json.dumps({"task": args.task, "answer": example.get("answer", ""), "predictions": predictions, "metadata": example.get("metadata", {})}, ensure_ascii=False) + "\n")
 

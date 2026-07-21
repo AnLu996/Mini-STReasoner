@@ -160,9 +160,14 @@ ADVERTENCIA DE ATRIBUCION
     cont_ECG                            0,0063           0,0364
     dominancia por ablacion             0,3792           0,3582
 
-  cont_ECG se multiplica por 5,8 pero queda en 0,0364, por debajo del umbral
-  operativo de 0,05 que el propio plan de mejoras fijaba como condicion para
-  defender dominancia textual con la senal efectivamente en juego.
+  cont_ECG pasa de 0,0063 a 0,0364.
+
+  >>> CORREGIDO POR LA FASE 4. Con intervalos de confianza esta lectura no se
+  >>> sostiene: cont_ECG de Corrida B es 0,0364 [-0,0032 · 0,0748], de modo que
+  >>> ni se distingue de cero ni del umbral de 0,05, y la diferencia pareada
+  >>> frente a Corrida A es +0,0301 [-0,0117 · +0,0696], tampoco significativa.
+  >>> El aumento observado es compatible con no haber cambiado nada. Ver
+  >>> RESULTADOS_FASE4_ESTADISTICA.txt seccion 1.
 
   LECTURA. La contribucion del ECG dejo de ser indistinguible de cero y paso a
   ser medible, mientras la exactitud global no se movio. Es decir, el modelo se
@@ -239,18 +244,21 @@ ADVERTENCIA DE ATRIBUCION
       esta identificado con precision y no solo postulado.
 
   NO SE ALCANZA
-    - cont_ECG = 0,0364 frente al umbral de 0,05.
+    - cont_ECG = 0,0364 no se distingue del umbral de 0,05 ni de cero, y su
+      mejora frente a Corrida A no es significativa (Fase 4, seccion 1).
     - El desempeno predictivo no mejora.
     - La robustez a parafrasis EMPEORA (QCFR 0,28 -> 0,49).
 
   SE DESCUBRE
     - D_texto confunde fragilidad textual con robustez de la senal (seccion 6).
 
-  LECTURA HONESTA PARA EL ARTICULO. Se pasa de "el modelo ignora la senal por
-  razones desconocidas" a "el modelo la ignoraba por tres defectos concretos y
-  medibles; corregidos, la usa casi seis veces mas, y lo que queda por cerrar
-  parece limite de escala". Eso es una contribucion, pero NO permite afirmar que
-  el problema este resuelto.
+  LECTURA HONESTA PARA EL ARTICULO (revisada tras la Fase 4). Lo demostrado es
+  que el modelo ignoraba la senal por tres defectos concretos y medibles, y que
+  corregirlos cambia de forma inequivoca el comportamiento INTERNO del encoder:
+  la atencion deja de ser uniforme con intervalos que no se solapan. Lo que NO
+  esta demostrado es que eso se traduzca en mas contribucion de la senal a la
+  respuesta: con n=300 la mejora de cont_ECG no es significativa. La
+  contribucion del trabajo es el diagnostico mecanico, no la solucion.
 
 
 ================================================================================

@@ -1,0 +1,197 @@
+================================================================================
+FASE 4 · INTERVALOS DE CONFIANZA Y PRUEBAS DE HIPOTESIS
+Mini-STReasoner · Corridas A y B sobre ECG-QA
+================================================================================
+
+Generado: 2026-07-21
+Artefactos:  outputs/ecgqa_confidence.json
+Script:      scripts/ecgqa_confidence.py
+Antecedentes: RESULTADOS_CORRIDA_A.txt · RESULTADOS_CORRIDA_B.txt
+              RESULTADOS_FASE2_RECALIBRACION.txt
+
+  >>> ESTA FASE CORRIGE VARIAS AFIRMACIONES DE LOS DOCUMENTOS ANTERIORES.
+  >>> Tres conclusiones que se daban por buenas no resisten un intervalo de
+  >>> confianza. Estan listadas en la seccion 1.
+
+METODO
+  Bootstrap de 1.000 remuestreos sobre las MUESTRAS, recalculando el estadistico
+  completo en cada extraccion. Las contribuciones modales son diferencias entre
+  condiciones medidas sobre las mismas muestras, de modo que el remuestreo es
+  pareado: cada extraccion toma casos enteros y recalcula ambos terminos sobre
+  ellos. Lo mismo al comparar corridas, porque A y B se evaluaron sobre el mismo
+  conjunto y en el mismo orden (verificado antes de usarlo: 300 ids identicos en
+  ablacion y 200 en contrafactual).
+
+  Proporciones binarias: intervalo de Wilson. Si/no contra el azar: prueba
+  binomial de dos colas. QCFR contra ECFR: prueba de permutacion pareada,
+  intercambiando las etiquetas dentro de cada caso.
+
+
+================================================================================
+1. LO QUE HAY QUE CORREGIR
+================================================================================
+
+  a) "cont_ECG = 0,0063 muestra que el ECG aporta poco pero aporta" (Corrida A).
+     FALSO como afirmacion de aporte. El intervalo es [-0,0187, 0,0335] e
+     INCLUYE EL CERO. Lo correcto es que la contribucion del ECG en Corrida A no
+     se distingue de cero. Esto en realidad REFUERZA la tesis del articulo: no
+     es que el ECG aporte poco, es que no hay evidencia de que aporte.
+
+  b) "cont_ECG = 0,0364 queda por debajo del umbral de 0,05" (Corrida B).
+     NO SOSTENIBLE. El intervalo es [-0,0032, 0,0748] y CONTIENE al 0,05. Con
+     n=300 no se puede afirmar ni que lo alcanza ni que no lo alcanza. Lo unico
+     defendible es que el dato no decide.
+
+  c) "la contribucion del ECG se multiplico por 5,8 en Corrida B".
+     NO SIGNIFICATIVA. La diferencia pareada B-A es +0,0301 con intervalo
+     [-0,0117, +0,0696], que incluye el cero. El aumento observado es compatible
+     con no haber cambiado nada. Es la correccion mas importante de esta fase.
+
+  Nota sobre (c): que la mejora no sea significativa NO invalida los hallazgos
+  mecanicos de la seccion 3, que son medidas directas con efectos enormes y no
+  estadisticos de muestreo ruidosos.
+
+
+================================================================================
+2. RESULTADOS
+================================================================================
+
+2.1 DESEMPENO PREDICTIVO (test, n=750)
+
+    metrica                   Corrida A                    Corrida B
+    Exact Match      0,2800 [0,2493 · 0,3134]     0,2600 [0,2293 · 0,2907]
+    Token-F1         0,3889 [0,3577 · 0,4189]     0,4009 [0,3719 · 0,4317]
+
+    Yes/No (n=239)   0,5983 [0,5351 · 0,6584]     0,5774 [0,5140 · 0,6383]
+      p contra azar          0,0028                       0,0197
+
+    Ambas corridas superan el azar en las preguntas binarias con significancia,
+    lo que responde el pendiente 3 del plan de mejoras de Corrida A: con n=18 no
+    era testeable, con n=239 si. Los intervalos de EM y F1 se solapan por
+    completo entre corridas: no hay diferencia de desempeno demostrable.
+
+2.2 ABLACION MODAL (n=300)
+
+    metrica                   Corrida A                    Corrida B
+    cont_texto       0,3855 [0,3409 · 0,4310]     0,3946 [0,3501 · 0,4401]
+    cont_ECG         0,0063 [-0,0187 · 0,0335]    0,0364 [-0,0032 · 0,0748]
+    dominancia       0,3792 [0,3321 · 0,4264]     0,3582 [0,3142 · 0,4040]
+
+    cont_texto y la dominancia por ablacion son claramente distintas de cero en
+    ambas corridas: es el resultado mas robusto de todo el trabajo. cont_ECG no
+    se distingue de cero en ninguna de las dos.
+
+    Contra el umbral de 0,05:
+      Corrida A   por debajo con significancia (limite superior 0,0335 < 0,05)
+      Corrida B   NO se distingue del umbral (0,05 cae dentro del intervalo)
+
+2.3 CONTRAFACTUAL (n=200, ECFR con oclusion temporal)
+
+    metrica                   Corrida A                    Corrida B
+    QCFR             0,2800 [0,2200 · 0,3400]     0,4900 [0,4200 · 0,5550]
+    ECFR             0,1500 [0,1000 · 0,1951]     0,0100 [0,0000 · 0,0250]
+    D_texto          0,1300 [0,0500 · 0,2100]     0,4800 [0,4100 · 0,5451]
+
+    Permutacion pareada QCFR contra ECFR:
+      Corrida A   diferencia 0,1300   p = 0,0040
+      Corrida B   diferencia 0,4800   p = 0,0010
+
+    La dominancia textual por la via contrafactual es significativa en ambas
+    corridas, y los intervalos de QCFR y de ECFR no se solapan entre A y B: esos
+    cambios si son reales. Lo que la seccion 6 de RESULTADOS_CORRIDA_B.txt
+    advierte sigue en pie: que sean reales no significa que D_texto los resuma
+    bien, porque resta fragilidad textual contra robustez de la senal.
+
+2.4 DIFERENCIA B - A (bootstrap pareado sobre las mismas muestras)
+
+    cont_ECG          +0,0301  [-0,0117 · +0,0696]   no significativa
+    cont_texto        +0,0091  [-0,0264 · +0,0472]   no significativa
+    F1 en full        +0,0320  [-0,0024 · +0,0688]   no significativa
+
+    Ninguna de las tres diferencias resiste el intervalo. Con n=300, Corrida B
+    no es demostrablemente distinta de Corrida A en ninguna metrica de ablacion.
+
+
+================================================================================
+3. LO QUE NO SE VE AFECTADO
+================================================================================
+
+  Los hallazgos mecanicos de Corrida B no son estadisticos de muestreo sino
+  medidas directas sobre las representaciones, con efectos de magnitud enorme.
+  Con bootstrap sobre las 100 muestras exportadas:
+
+    entropia de la atencion del encoder    Corrida A                Corrida B
+    media por token           0,9999 [0,9999 · 1,0000]   0,9490 [0,9472 · 0,9509]
+    token mas enfocado        0,9999 [0,9999 · 0,9999]   0,6822 [0,6675 · 0,6961]
+
+    Los intervalos NO SE SOLAPAN, ni de lejos. La atencion de Corrida A es
+    indistinguible de una distribucion uniforme y la de Corrida B no lo es.
+
+    Igual de solidas son las cantidades que no dependen de muestreo:
+      norma de token_queries      0,352  ->  15,979
+      razon de escala al entrar al LLM   38,9x  ->  1x por construccion
+
+  QUEDA SIN INTERVALO. El R2 del probe lineal de fidelidad (ritmo cardiaco
+  0,1565 -> 0,3290) es un R2 con validacion cruzada y no se le calculo intervalo
+  por coste. La direccion es consistente con el resto, pero la magnitud debe
+  citarse como indicativa mientras no se acompane de su incertidumbre.
+
+
+================================================================================
+4. QUE SE PUEDE AFIRMAR EN EL ARTICULO, Y QUE NO
+================================================================================
+
+  SE PUEDE AFIRMAR
+  1. La contribucion del texto es grande y significativa en ambas corridas
+     (0,39 [0,34 · 0,43] y 0,39 [0,35 · 0,44]).
+  2. La contribucion del ECG no se distingue de cero en ninguna corrida.
+  3. La dominancia textual es significativa por dos vias independientes:
+     ablacion (intervalo lejos de cero) y contrafactual (permutacion p<0,005).
+  4. El modelo supera el azar en preguntas binarias (p=0,0028 y p=0,0197).
+  5. La atencion temporal del encoder de Corrida A es indistinguible de una
+     distribucion uniforme, y corregir la escala de las consultas lo cambia.
+
+  NO SE PUEDE AFIRMAR
+  6. Que Corrida B mejore la contribucion del ECG. La diferencia no es
+     significativa.
+  7. Que cont_ECG de Corrida B quede por debajo del umbral de 0,05. No se
+     distingue de el.
+  8. Que Corrida B mejore o empeore el desempeno predictivo. Los intervalos se
+     solapan.
+  9. Que la mejora del R2 del ritmo cardiaco sea significativa, mientras no se
+     calcule su intervalo.
+
+
+================================================================================
+5. LO QUE SIGUE
+================================================================================
+
+  1. Ampliar n. Las tres afirmaciones no concluyentes (secciones 1b, 1c y 2.4)
+     lo son por tamano de muestra, no por el efecto observado. La ablacion usa
+     300 de las 750 muestras de test disponibles, asi que subir a 750 es solo
+     coste de inferencia, sin reentrenar.
+  2. Intervalo para el R2 del probe, remuestreando y recalculando la validacion
+     cruzada.
+  3. Correccion por comparaciones multiples si se reportan muchos subgrupos. El
+     analisis por tipo de pregunta de Corrida A y de la Fase 2 tiene grupos de
+     n=4 a n=62 y ninguno lleva intervalo todavia; en particular el cambio de
+     signo de single-choose de la Fase 2 se apoya en n=26.
+
+
+================================================================================
+6. COMO REPRODUCIRLO
+================================================================================
+
+  python scripts/ecgqa_confidence.py \
+      --run-a outputs/ecgqa_5k_control \
+      --run-b outputs/ecgqa_5k_encoder_b \
+      --ecg-interventions ecg_time_mask \
+      --resamples 1000 --seed 42
+
+  --ecg-interventions elige que contrafactuales componen el ECFR. Por defecto
+  usa solo la oclusion temporal, que es la calibrada segun la Fase 2; pasar las
+  cuatro reproduce la definicion original de Corrida A.
+
+================================================================================
+FIN
+================================================================================

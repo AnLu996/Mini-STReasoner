@@ -1,0 +1,577 @@
+================================================================================
+RESULTADOS EXPERIMENTALES - CORRIDA A (CONTROL)
+Mini-STReasoner · ECG-QA (PTB-XL paraphrased)
+Dataset ampliado a 5.000 preguntas · encoder temporal SIN modificar
+================================================================================
+
+Generado: 2026-07-20
+Artefactos: outputs/ecgqa_5k_control/
+Checkpoint: checkpoints/ecgqa_5k_control/
+Log completo: outputs/corrida_A_control.log
+
+PROPOSITO DE ESTA CORRIDA
+  Aislar el efecto de AMPLIAR EL DATASET manteniendo la arquitectura actual.
+  Es la linea base contra la que se comparara la corrida B (encoder ampliado),
+  para poder afirmar en el paper si el fallo de alineacion multimodal es por
+  falta de datos o es arquitectonico.
+
+  >>> LEER PRIMERO LA SECCION 9. Contiene un hallazgo que obliga a reinterpretar
+  >>> las metricas ECFR e impacto_ECG de la version anterior del paper.
+
+
+================================================================================
+1. CONFIGURACION EXPERIMENTAL
+================================================================================
+
+Hardware:            NVIDIA GeForce RTX 4050 Laptop GPU (6.141 MiB)
+                     Uso maximo observado: 1.865 MiB (30% de ocupacion de GPU)
+Modelo base:         Qwen/Qwen3-0.6B (hidden_size 1024)
+Cuantizacion:        QLoRA NF4, doble cuantizacion, compute dtype float16
+LoRA:                r=8, alpha=16, dropout=0.05, bias=none
+                     target_modules = q_proj, k_proj, v_proj, o_proj
+                     (solo atencion; los MLP gate/up/down quedan fuera)
+
+Codificador temporal (SIN CAMBIOS respecto al paper anterior):
+  input_dim            12 derivaciones
+  hidden_dim           128
+  temporal_dim         256
+  num_temporal_tokens  4          <-- compresion 1000:4 = 250:1
+  num_layers           1 (bidireccional)
+  dropout              0.1 declarado, 0.0 EFECTIVO
+                       (nn.GRU ignora dropout cuando num_layers=1)
+  pooling              atencional, 4 token queries aprendidas [4 x 256],
+                       softmax sobre el eje temporal
+
+Proyector latente:   Linear(256, 1024) -> GELU -> Linear(1024, 1024) -> LayerNorm
+
+Optimizacion:
+  optimizador          AdamW
+  learning rate        2e-4
+  scheduler            coseno con warmup (NUEVO; antes era constante)
+  warmup               210 pasos de 3.504 (6%)
+  batch size           1
+  grad accumulation    8
+  pasos por epoca      438
+  max_seq_len          512
+  clip grad norm       1.0
+  semilla              42
+
+Seleccion de modelo (NUEVO; antes no existia):
+  epocas solicitadas   8
+  epocas ejecutadas    7
+  early stopping       si, paciencia 3 sobre valid_loss
+  checkpoint guardado  epoca 4 (el mejor), NO el ultimo
+  muestras validacion  200 por epoca (antes 50)
+
+Preprocesamiento ECG:
+  registros PTB-XL records500 (500 Hz, 10 s, 12 derivaciones)
+  remuestreo lineal a 1000 pasos, z-score por derivacion
+  NOTA: el z-score se aplica DOS VECES, una en prepare_ecg_signals.py y otra
+        dentro del propio encoder. Pendiente de corregir en la corrida B.
+
+
+================================================================================
+2. DATASET
+================================================================================
+
+                    preguntas   ECGs unicos   preguntas/ECG
+  train                 3.500         1.190            2,94
+  valid                   750           255            2,94
+  test                    750           255            2,94
+  TOTAL                 5.000         1.700            2,94
+
+Tamano en disco: 449 MB
+Fuente QA:       repositorio ECG-QA v1.0.2, particion PTB-XL "paraphrased"
+Fuente senal:    PhysioNet PTB-XL 1.0.3 (descarga directa de .hea/.dat)
+Seleccion:       muestreo determinista con semilla 42 sobre las particiones
+                 OFICIALES de ECG-QA, con presupuesto acoplado de preguntas y
+                 de ECGs unicos.
+
+FUGA ENTRE PARTICIONES - VERIFICADA EMPIRICAMENTE:
+  |ECGs(train) n ECGs(valid)| = 0
+  |ECGs(train) n ECGs(test) | = 0
+  |ECGs(valid) n ECGs(test) | = 0
+  El split es a NIVEL DE ECG, no de pregunta. Esto cubre la Tarea 1.1 del plan
+  de mejoras, que estaba listada como pendiente pero ya se cumplia: las
+  particiones oficiales de ECG-QA son disjuntas por ecg_id.
+
+Escala relativa: 16,7x el subconjunto anterior (300 preguntas / 100 ECGs).
+Universo disponible sin usar: 414.348 preguntas sobre 16.052 ECGs unicos.
+La corrida usa el 1,21% de las preguntas y el 10,6% de los ECGs disponibles.
+
+Distribucion por tipo de pregunta (5.000 preguntas):
+  single-choose                   1.247   (24,9%)
+  single-verify                   1.214   (24,3%)
+  single-query                    1.018   (20,4%)
+  comparison_irrelevant-query       843   (16,9%)
+  comparison_irrelevant-verify      354   ( 7,1%)
+  comparison_consecutive-verify     253   ( 5,1%)
+  comparison_consecutive-query       71   ( 1,4%)
+
+
+================================================================================
+3. ENTRENAMIENTO
+================================================================================
+
+Figura: outputs/ecgqa_5k_control/training_curves.png
+  Panel superior: perdida de entrenamiento por paso, media por epoca y
+                  perdida de validacion. Linea vertical = epoca seleccionada.
+  Panel inferior: exact match y token-F1 en validacion por epoca.
+  (La figura del paper anterior solo tenia la curva de entrenamiento porque no
+   existia ningun script de graficas en el repositorio.)
+
+  epoca   train_loss   valid_loss   EM_val   F1_val    lr        seleccion
+    1       1,5918       0,7163     0,275    0,3987    1,98e-04    mejor
+    2       0,4546       0,6116     0,240    0,3959    1,80e-04    mejor
+    3       0,4032       0,5520     0,340    0,4370    1,50e-04    mejor
+    4       0,3681       0,5473     0,330    0,4749    1,10e-04    MEJOR <- ckpt
+    5       0,3321       0,5612     0,315    0,4454    6,88e-05      -
+    6       0,2843       0,5806     0,290    0,4357    3,29e-05      -
+    7       0,2306       0,6180     0,310    0,4621    8,60e-06      -
+                                    early stopping tras 3 epocas sin mejora
+
+  Pasos de optimizacion totales: 3.066
+  Perdida final de entrenamiento: 0,00074
+
+LECTURA DE LA CURVA (relevante para la Discusion):
+  La perdida de entrenamiento cae de 1,59 a 0,23 mientras la de validacion toca
+  fondo en la epoca 4 (0,5473) y despues sube de forma monotona (0,5612 ->
+  0,5806 -> 0,6180). Es sobreajuste clasico y aparece muy temprano: la
+  validacion ya esta practicamente plana desde la epoca 2.
+
+  Interpretacion: con 3.500 muestras y LoRA r=8 limitado a las proyecciones de
+  atencion, la capacidad efectiva del modelo se agota en pocas epocas. Mas
+  epocas NO van a mejorar el resultado; hace falta mas capacidad (encoder mas
+  grande, LoRA mas agresivo o modulos MLP en el target de LoRA).
+
+  Con el codigo anterior (una sola epoca, sin seleccion por validacion) o con
+  ocho epocas guardando la ultima, el checkpoint retenido habria sido peor que
+  el que se retuvo aqui.
+
+Linea base sin entrenar (etapa 3, 20 muestras): EM 0,0000 · token-F1 0,0000.
+  Confirma que el desempeno reportado es atribuible al ajuste y no al prior del
+  LLM base.
+
+
+================================================================================
+4. DESEMPENO PREDICTIVO (test, n = 750)
+================================================================================
+
+GLOBAL
+  Exact Match           0,2800
+  Token-F1              0,3889
+  Yes/No Accuracy       0,5983   (n = 239 preguntas de si/no)
+
+  NOTA IMPORTANTE: en la version anterior del paper EM y token-F1 eran
+  identicos (0,3111 los dos). Esa igualdad es la firma de un modelo colapsado a
+  respuestas de un solo token. Aqui EM (0,2800) y F1 (0,3889) DIVERGEN, lo que
+  indica respuestas multi-token con solapamiento parcial con la etiqueta. Es
+  evidencia directa contra la objecion de "colapso" (ver seccion 8).
+
+POR TIPO DE PREGUNTA
+  tipo                              n      EM       F1    Acc_si/no
+  single-verify                   165   0,5818   0,5818     0,5854
+  comparison_consecutive-verify    23   0,6957   0,6957     0,6957
+  comparison_irrelevant-verify     52   0,5962   0,5962     0,5962
+  single-choose                   141   0,2482   0,2985       -
+  single-query                    187   0,1658   0,2945       -
+  comparison_irrelevant-query     170   0,0059   0,2990       -
+  comparison_consecutive-query     12   0,0000   0,0542       -
+
+  Las preguntas de verificacion (respuesta binaria) rinden entre 0,58 y 0,70.
+  Las de consulta abierta (query) se hunden en EM pero mantienen F1 en torno a
+  0,29-0,30, es decir, aciertan parte de los terminos pero casi nunca la
+  etiqueta completa.
+
+POR TIPO DE ATRIBUTO CLINICO
+  atributo                n      EM       F1    Acc_si/no
+  scp_code              596   0,2685   0,3657     0,6000
+  numeric_feature        73   0,1781   0,4825     0,5556
+  noise                  68   0,4706   0,4806     0,6552
+  heart_axis              5   0,4000   0,4000     0,4000
+  stage_of_infarction     5   0,2000   0,3600     0,3333
+  extra_systole           3   0,6667   0,6667     0,6667
+
+  Los grupos con n<10 no admiten lectura estadistica; se reportan por
+  completitud. El grueso de la evaluacion es scp_code (79,5%).
+
+
+================================================================================
+5. SENSIBILIDAD CONTRAFACTUAL (n = 200)
+================================================================================
+
+  QCFR (flip por pregunta reescrita)         0,2800
+  ECFR (flip por ECG perturbado)             0,0638
+  D_texto = QCFR - ECFR                      0,2163
+  Conflicto sigue a la pregunta              0,4543
+  Conflicto sigue al ECG                     0,6402
+  Flip rate con pregunta neutral             0,8600
+
+  (Las dos tasas de conflicto no son mutuamente excluyentes: una respuesta
+   puede ser compatible con ambas fuentes a la vez.)
+
+POR TIPO DE PREGUNTA
+  tipo                              n     QCFR     ECFR   D_texto  neutral
+  comparison_consecutive-query      4   0,7500   0,0625   0,6875   1,0000
+  single-query                     47   0,4894   0,0532   0,4362   0,7660
+  comparison_irrelevant-query      62   0,4355   0,1210   0,3145   0,9355
+  single-choose                    26   0,1154   0,0865   0,0288   0,5000
+  single-verify                    30   0,0000   0,0083  -0,0083   1,0000
+  comparison_consecutive-verify     9   0,0000   0,0000   0,0000   1,0000
+  comparison_irrelevant-verify     22   0,0000   0,0000   0,0000   1,0000
+
+  HALLAZGO: la dominancia textual NO es uniforme. Va de 0,69 en
+  comparison_consecutive-query a -0,01 en single-verify. Las preguntas de
+  verificacion son insensibles a AMBAS modalidades (QCFR = ECFR = 0), mientras
+  que las de consulta abierta son fuertemente sensibles al texto.
+
+  Esto cubre la Prioridad 3.3 del plan de mejoras ("analisis por subgrupo"),
+  que estaba listada como no disponible.
+
+  ADVERTENCIA: el valor de ECFR debe leerse junto con la seccion 9.
+
+
+================================================================================
+6. ABLACION MODAL (n = 300)
+================================================================================
+
+  configuracion     n       EM       F1    Acc_si/no
+  full            300   0,2633   0,3880     0,5938
+  no_text         300   0,0000   0,0025     0,0625
+  no_series       300   0,2567   0,3817     0,5938
+  conflict_text   300   0,2667   0,3718     0,5833
+
+  cont_texto  = F1(full) - F1(no_text)     =  0,3855
+  cont_ECG    = F1(full) - F1(no_series)   =  0,0063
+  D_abl_texto = cont_texto - cont_ECG      =  0,3792
+
+  >>> CIFRA CLAVE: cont_ECG paso de -0,0333 (paper anterior) a +0,0063.
+  >>> Cambia de signo. El ECG ya no DANA el desempeno: aporta, aunque muy poco.
+  >>> El plan de mejoras fijaba +0,05 como minimo para poder defender
+  >>> "dominancia textual real". Con +0,0063 se esta a un sexto del objetivo.
+
+  no_text con F1 = 0,0025 sigue descartando el colapso indiscriminado: quitar
+  el texto destruye el desempeno por completo, asi que el modelo no esta
+  emitiendo una respuesta constante independiente de la entrada.
+
+POR TIPO DE PREGUNTA (ordenado por cont_ECG)
+  tipo                              n   cont_texto   cont_ECG   D_abl
+  comparison_irrelevant-query      80      0,2992     0,0546   0,2446
+  single-verify                    53      0,5993     0,0189   0,5805
+  single-query                     78      0,2927     0,0044   0,2883
+  comparison_consecutive-verify    14      0,5672     0,0000   0,5672
+  comparison_irrelevant-verify     29      0,5842    -0,0345   0,6187
+  single-choose                    42      0,2816    -0,0606   0,3421
+  comparison_consecutive-query      4      0,1011    -0,0687   0,1699
+  ---------------------------------------------------------------------
+  GLOBAL                          300      0,3855     0,0063   0,3792
+
+  HALLAZGO: comparison_irrelevant-query (n=80) alcanza cont_ECG = +0,0546, es
+  decir SUPERA el umbral de 0,05 del plan de mejoras. En ese subgrupo si se
+  puede defender dominancia textual real (el ECG aporta y el texto aporta mas).
+  En single-choose el ECG sigue siendo perjudicial (-0,0606).
+
+  La dominancia textual por ablacion varia entre 0,17 y 0,62 segun el tipo de
+  pregunta. Es material suficiente para una subseccion nueva de Resultados.
+
+
+================================================================================
+7. TRAZADO REPRESENTACIONAL INTERNO (n = 50)
+================================================================================
+
+  Modo: interno (activaciones capturadas con forward hooks)
+  Metrica: distancia coseno sobre activaciones promediadas por token
+  Umbrales: margen 0,08 · inactivo 0,015
+
+  Clasificacion de casos:
+    TEXT_DOMINANT    46 / 50  (92%)
+    INSENSITIVE       4 / 50  ( 8%)
+    ECG_DOMINANT      0 / 50
+    BALANCED          0 / 50
+    UNCLEAR           0 / 50
+
+  D_texto (cuota textual): media 0,9920 · mediana 1,0000
+                           minimo 0,6000 · maximo 1,0000
+  Nivel de dominancia textual: "alta" en 50/50 casos.
+
+  Volteos de respuesta por intervencion (numero de casos de 50):
+    pregunta neutral        41   (82%)
+    sin ECG                 26   (52%)
+    texto en conflicto      24   (48%)
+    pregunta reescrita      17   (34%)
+    ECG perturbado           1   ( 2%)   <-- ver seccion 9
+
+  Impactos medios por etapa:
+    etapa        impacto_texto   impacto_ECG   delta
+    encoder          n/d           0,0000       n/d
+    projector        n/d           0,0000       n/d
+    fusion          0,0001         0,0000     +0,0001
+    llm             0,0219         0,0000     +0,0219
+    output          0,0165         0,0000     +0,0165
+
+    ("n/d" = no aplica: en encoder y proyector el texto todavia no ha entrado
+     al flujo. Es distinto de valer cero.)
+
+  Etapa de amplificacion: LLM (salto 0,0219).
+  El desbalance texto-ECG se manifiesta desde la fusion en inputs_embeds y se
+  amplifica en el LLM. NO se afirma que el sesgo nazca en esa etapa.
+
+  Aciertos en los 50 casos trazados: 14/50.
+
+TEST DE OCCLUSION TEMPORAL (6 ventanas por caso, 300 ventanas en total)
+  Cada ventana se pone a cero en todas las derivaciones y se regenera la
+  respuesta.
+
+    ventanas que cambian la respuesta      43 / 300   (14,3%)
+    casos con al menos una ventana necesaria  12 / 50   (24%)
+
+  >>> En la corrida anterior este test daba 0/180 ventanas y 0/30 casos. Se
+  >>> calculaba, se exportaba y NINGUN panel del visualizador lo mostraba.
+  >>> Ahora esta conectado al visualizador (panel V4).
+
+  Es la evidencia mas directa de que el modelo SI usa tramos concretos del ECG
+  en una cuarta parte de los casos.
+
+
+================================================================================
+8. DIVERSIDAD DE RESPUESTAS (test, n = 750)
+================================================================================
+
+  Cubre la Prioridad 1.4 del plan de mejoras ("que el modelo no colapse a un
+  solo token"), que pedia explicitamente una metrica de diversidad.
+
+    respuestas distintas generadas      60
+    tokens unicos generados             93
+    entropia de Shannon              3,5964 bits
+    entropia maxima posible          5,9069 bits (log2 60)
+    entropia normalizada             0,6088
+    respuesta mas frecuente          "no"   239/750 = 31,9%
+    masa acumulada en top-5          71,5%
+
+  Distribucion de las 8 respuestas mas frecuentes:
+     239  (31,9%)  no
+     203  (27,1%)  none
+      39  ( 5,2%)  non specific st depression, atrial fibrillation, ventricular
+                   premature complex
+      37  ( 4,9%)  sinus rhythm, non specific st depression, left ventricular
+                   hypertrophy
+      18  ( 2,4%)  non specific st depression, atrial fibrillation, non specific
+                   intraventricular conduction disturbance
+      18  ( 2,4%)  qrs duration, qt corrected, p duration
+      15  ( 2,0%)  left anterior fascicular block
+      13  ( 1,7%)  non specific st changes, atrial fibrillation, ventricular
+                   premature complex
+
+  LECTURA: no hay colapso a un unico token, pero si una concentracion fuerte en
+  dos respuestas degeneradas ("no" y "none") que suman el 59% de la masa. La
+  entropia normalizada de 0,61 describe un modelo parcialmente colapsado: emite
+  60 respuestas distintas, pero mas de la mitad de las veces recurre a una
+  negacion generica.
+
+  Para el paper conviene reportarlo asi, sin sobrevender: el colapso total esta
+  descartado, el sesgo hacia la negacion no.
+
+
+================================================================================
+9. HALLAZGO CRITICO: EL CONTRAFACTUAL DE ECG ESTA MAL CALIBRADO
+================================================================================
+
+  Este es el resultado mas importante de la corrida y OBLIGA A REINTERPRETAR
+  las metricas ECFR e impacto_ECG del paper anterior.
+
+EL SINTOMA
+  En el trazado interno, impacto_ECG sale 0,0000 en las cinco etapas y en los
+  50 casos. Un cero exacto y universal es implausible si el ECG-CF realmente
+  voltea el 6,4% de las respuestas (ECFR = 0,0638).
+
+LA MEDICION
+  Se midio la distancia coseno en la salida del encoder SIN redondear,
+  comparando la senal original contra dos intervenciones distintas:
+
+    caso                d(orig, ruido)   d(orig, ventana ocluida)
+    ptbxl/test/70349      6,199e-06            1,101e-02
+    ptbxl/test/24181      4,947e-06            8,357e-02
+    ptbxl/test/70141      1,377e-05            3,489e-02
+    ptbxl/test/66456      1,419e-05            3,936e-02
+    ptbxl/test/13752      4,780e-05            3,896e-02
+    ptbxl/test/48664      6,616e-06            1,111e-01
+
+  La perturbacion por ruido mueve la representacion entre 5e-06 y 5e-05.
+  La occlusion de una ventana la mueve entre 1e-02 y 1e-01.
+  TRES O CUATRO ORDENES DE MAGNITUD de diferencia.
+
+LA CAUSA
+  add_noise() aplica ruido gaussiano de MEDIA CERO al 5% de la desviacion tipica
+  de cada derivacion. El encoder resume 1000 pasos temporales mediante pooling
+  atencional (softmax sobre el eje temporal). Un promedio ponderado de 1000
+  muestras de ruido de media cero se cancela casi por completo: es el
+  comportamiento esperado de CUALQUIER encoder con pooling, no una propiedad de
+  este modelo.
+
+  En otras palabras: el ECG-CF actual mide sobre todo la capacidad del pooling
+  para promediar ruido, no la dependencia del modelo respecto al ECG.
+
+CONSECUENCIAS PARA EL PAPER
+  1. impacto_ECG = 0 en el trazado interno NO demuestra que el encoder ignore
+     el ECG. El encoder SI reacciona: reacciona 1e-02 ante una intervencion
+     estructurada. Cualquier afirmacion del tipo "la senal ECG no participa"
+     debe suavizarse o rehacerse con otra intervencion.
+  2. ECFR (0,0638 ahora, 0,0000 antes) esta sesgado a la baja por construccion.
+     El valor de 0,0000 del paper anterior es, en buena parte, un artefacto de
+     una perturbacion demasiado debil.
+  3. D_texto = QCFR - ECFR hereda el sesgo: sobreestima la dominancia textual
+     en una magnitud que hoy no esta cuantificada.
+  4. La ablacion modal (seccion 6) NO esta afectada: no_series elimina la
+     modalidad entera en vez de perturbarla, asi que cont_ECG es una medida
+     limpia. Igual el test de occlusion (seccion 7).
+
+  Esto es exactamente el tipo de objecion que un revisor Q3 detecta y que
+  hundiria el articulo. Es mucho mejor haberlo encontrado ahora.
+
+QUE HACER (propuesta, pendiente de decision)
+  a) Calibrar la intervencion de ECG por MAGNITUD DE EFECTO, no por parametro
+     fijo: elegir el nivel de ruido que produzca en la representacion un
+     desplazamiento comparable al que produce la reescritura de la pregunta.
+     Solo asi QCFR y ECFR son comparables entre si.
+  b) Alternativamente o de forma complementaria, adoptar la OCCLUSION como
+     contrafactual primario de ECG. Ya esta implementada, produce efectos
+     medibles y es interpretable clinicamente ("que tramo del registro
+     necesita el modelo").
+  c) Reportar ambas versiones en el paper y explicar la diferencia. Convierte
+     una debilidad metodologica en una contribucion: el articulo pasaria a
+     documentar que las metricas de dominancia por perturbacion son sensibles
+     a la calibracion de la intervencion, algo que la literatura citada no
+     discute.
+
+  Las transformaciones alternativas YA EXISTEN en el repositorio y no se usan:
+  scale_amplitude (escalado de amplitud), mask_leads (anula derivaciones),
+  mask_time (anula ventana temporal). Todas producen cambios estructurados que
+  sobreviven al pooling.
+
+
+================================================================================
+10. COMPARACION CON LA VERSION ANTERIOR DEL PAPER
+================================================================================
+
+  metrica                      antes         ahora      variacion
+                          (300 preg.)   (5.000 preg.)
+  ------------------------------------------------------------------
+  Preguntas                       300         5.000       x16,7
+  ECGs unicos                     100         1.700       x17,0
+  Epocas                            1             7       x7
+  Seleccion por validacion         no            si
+  Test n                          ~45           750
+
+  Token-F1 (test)              0,3111        0,3889       +0,0778
+  Exact Match                  0,3111        0,2800       -0,0311
+  Yes/No Accuracy              0,5556        0,5983       +0,0427
+                              (n = 18)     (n = 239)
+
+  QCFR                         0,0889        0,2800       +0,1911
+  ECFR                         0,0000        0,0638       +0,0638
+  D_texto (contrafactual)      0,0889        0,2163       +0,1274
+  Conflicto sigue pregunta     0,5122        0,4543       -0,0579
+  Conflicto sigue ECG          0,8659        0,6402       -0,2257
+  Flip rate neutral            0,9780        0,8600       -0,1180
+
+  Ablacion full (F1)           0,3111        0,3880       +0,0769
+  Ablacion no_text (F1)        0,0043        0,0025       -0,0018
+  Ablacion no_series (F1)      0,3444        0,3817       +0,0373
+  cont_texto                   0,3068        0,3855       +0,0787
+  cont_ECG                    -0,0333       +0,0063       +0,0396  <-- SIGNO
+  D_abl_texto                  0,3401        0,3792       +0,0391
+
+  TEXT_DOMINANT (trazado)       30/30         46/50
+  Occlusion: ventanas activas    0/180        43/300
+  Respuestas distintas          n/d           60 de 750
+  Entropia normalizada          n/d           0,6088
+
+  EM = F1 exactamente?           SI            NO      (fin del colapso total)
+
+  LECTURA GLOBAL
+    Ampliar el dataset y entrenar mas epocas mejora el desempeno predictivo de
+    forma clara (+0,08 en F1, +0,04 en Yes/No) y cambia el signo de cont_ECG,
+    pero NO alcanza el umbral que hacia defendible la tesis de dominancia
+    textual (cont_ECG >= 0,05 global).
+
+    El diagnostico de que el cuello de botella es arquitectonico (compresion
+    250:1 en el encoder) queda REFORZADO, no descartado: mas datos movieron la
+    aguja sin resolver el problema. Esto justifica la corrida B.
+
+
+================================================================================
+11. LO QUE SIGUE PENDIENTE
+================================================================================
+
+BLOQUEANTE PARA PUBLICAR
+  1. Recalibrar el contrafactual de ECG (seccion 9). Sin esto, ECFR, D_texto y
+     los impactos internos no son defendibles.
+  2. cont_ECG global >= 0,05. Hoy 0,0063. Es el objetivo de la corrida B
+     (encoder de 32 tokens, 2 capas, hidden 256).
+  3. Intervalos de confianza bootstrap (n=1000) para EM, F1, QCFR, ECFR,
+     D_texto. Test binomial de Yes/No contra 0,5: con n=239 y p=0,5983 esto ya
+     es testeable, cosa que con n=18 no lo era.
+
+RECOMENDABLE
+  4. Test de permutacion para la diferencia QCFR - ECFR.
+  5. Fidelidad del encoder: no existe ninguna metrica en el repositorio que
+     verifique que la salida del encoder representa la senal de entrada
+     (ni reconstruccion, ni correlacion, ni CKA, ni linear probing). Es la
+     pregunta que planteo la asesora y hoy no tiene respuesta.
+  6. Exportar la atencion del encoder [B, 4, T]: ya se calcula y se devuelve,
+     pero nadie la persiste. Responderia "que parte de la serie mira el modelo".
+  7. Baselines no-LLM (Random Forest / LSTM sobre features del ECG + BOW de la
+     pregunta) y ECG serializado como texto.
+  8. Piloto con 3-5 cardiologos sobre el visualizador.
+
+DEFECTOS DE INFRAESTRUCTURA DETECTADOS EN ESTA CORRIDA
+  9. ORDEN DE ETAPAS: stage7_summary se ejecuta ANTES de stage6b_ablation, asi
+     que el resumen imprime "Ablacion: (no calculada)". En corridas anteriores
+     parecia funcionar solo porque quedaba un ablation.jsonl viejo en el
+     directorio. Las cifras correctas estan en ablation_summary.json.
+ 10. DOBLE NORMALIZACION: el z-score por derivacion se aplica en
+     prepare_ecg_signals.py y otra vez dentro del encoder.
+ 11. DROPOUT INERTE: el encoder declara dropout=0.1 pero nn.GRU lo ignora con
+     num_layers=1, asi que el dropout efectivo es 0.
+ 12. INFRAUTILIZACION DE GPU: 1.865 MiB de 6.141 y 30% de ocupacion con
+     batch_size=1. Hay margen para subir el batch en la corrida B.
+
+
+================================================================================
+12. INVENTARIO DE ARTEFACTOS
+================================================================================
+
+outputs/ecgqa_5k_control/
+  run_summary.json                    resumen global de la corrida
+  evaluation.jsonl                    750 predicciones de test con EM/F1 por fila
+  evaluation_summary.json             global + por tipo de pregunta + atributo
+  evaluation_by_question_type.csv
+  evaluation_by_attribute_type.csv
+  counterfactual_results.jsonl        200 casos contrafactuales
+  counterfactual_summary.json         global + por tipo de pregunta
+  counterfactual_by_question_type.csv
+  ablation.jsonl                      300 casos x 4 configuraciones
+  ablation_summary.json               global + por tipo de pregunta
+  ablation_by_config.csv
+  ablation_by_question_type.csv
+  attributions.jsonl                  50 casos con saliencia por token y parche
+  metrics_train.json                  historial de epocas y seleccion
+  training_log.jsonl                  log por paso y por epoca (append, con run id)
+  training_curves.png                 FIGURA: curvas train + validacion
+  selected_cases.jsonl                casos seleccionados para el paper
+  tracing_data.js / .json             copia archivada del trazado (50 casos)
+  ecgqa_viz_data.js / .json           copia archivada de los datos del dashboard
+  logs/                               salida de consola de cada etapa
+
+visualizer/
+  visualizador_d3.html                trazado interno (V1-V5) + occlusion
+  dashboard_dominancia_d3.html        dashboard de dominancia
+  tracing_data.js                     datos vivos del trazado
+  ecgqa_viz_data.js                   datos vivos del dashboard
+
+data/ecgqa_5k/                        dataset (449 MB, 5.000 preguntas)
+checkpoints/ecgqa_5k_control/         checkpoint de la epoca 4
+
+================================================================================
+FIN
+================================================================================

@@ -1,0 +1,444 @@
+================================================================================
+RESUMEN DE SESION DE TRABAJO SOBRE EL PAPER + PLAN DE MEJORAS DEL MODELO
+Paper: "Visualizacion Explicable del Sesgo de Dominancia Textual en Modelos
+        Multimodales de Lenguaje para Series Temporales Clinicas"
+Autora: Andrea Lucia Cuela Morales
+Ruta:   E:\UNSA\2026-A\Tesis\a_paper.tex
+================================================================================
+
+
+================================================================================
+PARTE 1 - RESUMEN DE TODO LO APLICADO AL PAPER
+================================================================================
+
+--------------------------------------------------------------------------------
+FASE 0 - AUDITORIA Y DIAGNOSTICO
+--------------------------------------------------------------------------------
+
+* Se leyeron las 3 revisiones (Reject/Major Revision) y el archivo Tareas.pdf
+  con 24 tareas priorizadas Alto/Medio/Bajo.
+* Se cargaron los resultados vigentes desde:
+    Mini-STReasoner\visualizer\ecgqa_viz_data.json  (n=45, evaluacion completa)
+    Mini-STReasoner\visualizer\tracing_data.json    (n=30, trazado por etapa)
+* Se detectaron 17 referencias huerfanas y 1 rota en el bibliography.
+* Numeros viejos del paper vs numeros reales de la corrida vigente:
+    EM/F1 test:             0.244 -> 0.311
+    QCFR:                   0.244 -> 0.089
+    ECFR:                   0.011 -> 0.000
+    D_texto:                0.233 -> 0.089
+    Conflicto follows text: 50.0% -> 51.2%
+    Conflicto follows ECG:  73.3% -> 86.6%
+    Flip rate neutral:      no reportado -> 0.978  (metrica nueva)
+    TEXT_DOMINANT en trazado: no reportado -> 30/30 (metrica nueva)
+    Ablacion no_text:       no reportado -> EM 0.000
+    Ablacion no_series:     no reportado -> EM 0.333 (> full)
+    D_abl_texto:            no reportado -> 0.340
+
+--------------------------------------------------------------------------------
+FASE 1 - INSERCIONES NUEVAS EN LA SECCION DE RESULTADOS
+--------------------------------------------------------------------------------
+
+Se anadieron 3 sub-secciones nuevas de Resultados sin tocar las existentes:
+
+1. Sub-seccion "Baselines por ablacion modal" (ssec:ablation)
+   - Nueva tabla tab:ablation con las 4 configuraciones:
+     full, no_text, no_series, conflict_text
+   - Reporta contribuciones agregadas en Token-F1:
+     cont_texto = 0.307, cont_ECG = -0.033, D_abl_texto = 0.340
+   - Argumenta que no_text=0.000 descarta colapso indiscriminado.
+   - Cubre las Tareas 6, 9 y 12 del Tareas.pdf.
+
+2. Sub-seccion "Prueba de la pregunta neutral" (ssec:neutral)
+   - Reporta flip rate 0.978 (44/45 casos).
+   - Se presenta como control positivo del canal textual.
+   - Cubre la Tarea 24.
+
+3. Sub-seccion "Trazado representacional interno por etapa" (ssec:tracing_res)
+   - Nueva tabla tab:tracing con impactos por etapa (encoder, proyector,
+     fusion, LLM, salida).
+   - Reporta 30/30 casos TEXT_DOMINANT.
+   - Argumenta amplificacion en el LLM sin caer en overclaim causal
+     ("se manifiesta o se amplifica").
+   - Se anadio la etiqueta ssec:tracing_def a la sub-seccion teorica del
+     trazado en la Seccion IV para poder referenciarla.
+
+--------------------------------------------------------------------------------
+ACTUALIZACION DE NUMEROS EN SECCIONES YA EXISTENTES
+--------------------------------------------------------------------------------
+
+Se actualizaron todas las cifras viejas en:
+- Abstract (reformulado con hallazgo por ablacion como principal)
+- Seccion IV-D (Desempeno predictivo): EM/F1 test 0.244 -> 0.311
+- Seccion IV-E (Sensibilidad contrafactual): QCFR/ECFR/D_texto actualizados;
+  removido el overclaim "22 veces mas sensible" (razon indefinida con ECFR=0)
+- Seccion IV-F (Clasificacion de casos): 10/1/34 -> 4/0/41 casos
+  con distribucion bimodal comentada
+- Seccion IV-G (Resolucion de conflicto): 50.0/73.3 -> 51.2/86.6
+  con aclaracion explicita sobre no exclusividad de las categorias
+- Seccion IV-H (Sintesis): parrafo reescrito con las 4 rutas convergentes
+- Tabla II completamente rehecha con bloques nuevos:
+  Ablacion, Pregunta neutral, Trazado interno
+- Captions de las Figuras fig:perf, fig:cf, fig:break, fig:conflict
+  actualizados con las cifras vigentes
+
+--------------------------------------------------------------------------------
+BIBLIOGRAFIA - LIMPIEZA COMPLETA
+--------------------------------------------------------------------------------
+
+Eliminadas 9 referencias huerfanas (no citadas y fuera del tema):
+- chexone (Chest X-ray, no ECG)
+- ehrxqa (EHR + X-ray, no time series)
+- emrqa (solo texto EMR)
+- sleepqa (Sleep coaching, no time series)
+- speed_always_wins (Survey eficiencia LLM)
+- imaging_survey (Imagenes medicas, no time series)
+- protomedagent (X-ray neuro-simbolico)
+- rexvqa (X-ray VQA)
+- llatisa (Razonamiento por dificultad, tangente)
+
+Anadidas al texto y citadas (7 refs valiosas antes huerfanas):
+- lpf (Language-Prior Feedback en VQA)
+- patra (TSQA con alineacion)
+- time_xl (TimeXL - multimodal time series explicable)
+- cc_vqa_hong (Conflict resolution VQA)
+- towards_transparent (Transparencia en series temporales)
+- survey_xai_chaddad (Survey XAI medico)
+- time_series_reasoning_survey (Panorama razonamiento TS + LLM)
+
+Anadida nueva referencia recomendada por asesora:
+- wang2020multimodaltraining (Gradient dominance, CVPR 2020) - foundational
+
+Anadida referencia en Seccion III como contraste:
+- hsqp (Tokenizacion simbolico-cuantizada TS) - se cita en III para
+  justificar por que se usa proyector latente en lugar de serializar
+
+Estado del bibliography:
+    31 bibitems | 32 keys citadas | 0 huerfanos | 1 roto (kligfield2007ecg)
+
+--------------------------------------------------------------------------------
+SECCION II - TRABAJOS RELACIONADOS
+--------------------------------------------------------------------------------
+
+Reescrita en 3 sub-secciones:
+- II.A Dominancia textual y sesgos de fusion en modelos multimodales
+- II.B QA sobre series temporales clinicas
+- II.C Explicabilidad contrafactual y visualizacion explicable
+
+El texto en prosa mantiene el analisis critico dirigido al gap
+(patron "aporte breve + limitacion especifica dirigida a lo que
+mi trabajo mejora"). No repite las frases de la Introduccion.
+
+--------------------------------------------------------------------------------
+TABLA I - REDISENADA
+--------------------------------------------------------------------------------
+
+De 16 filas a 9 filas + fila propia. Agrupada por categoria con
+\multicolumn:
+
+[Dominancia textual y sesgos de fusion multimodal - II.A]
+  1. Mind the Gap
+  2. Compose and Fuse
+  3. When Language Overrules
+  4. Key-space bias
+  5. LPF
+
+[QA sobre series temporales clinicas - II.B]
+  6. ITFormer
+  7. PATRA
+
+[Explicabilidad contrafactual y visualizacion - II.C]
+  8. TimeXL
+  9. MIMIC-Diff-VQA
+
+[Fila destacada en negrita]
+  10. Este trabajo (con todas las cifras vigentes)
+
+Columnas (7):
+  Trabajo | Modalidad | Medida de dominancia | Contrafact. ext. |
+  Visual. por caso | Metricas | Resultados
+
+Modalidad se escribe completa (Texto + Imagen, Texto + Serie Temporal,
+Texto + ECG (12 derivaciones), etc.) y las palabras estan completas
+(no abreviaturas).
+
+--------------------------------------------------------------------------------
+FASE 2 - METRICAS FORMALES, DISCUSION, CONCLUSION Y TRABAJO FUTURO
+--------------------------------------------------------------------------------
+
+1. Metricas formales anadidas en Seccion IV (Pipeline del sistema):
+   - Definiciones matematicas explicitas de EM, Token-F1 y Acc_si/no
+     (diferenciadas, sin ambiguedad).
+   - Definiciones formales de QCFR, ECFR, D_texto (con ecuacion).
+   - Definiciones de cont_texto, cont_ECG, D_abl_texto (ablacion).
+   - Definicion de FR_neutral (flip rate pregunta neutral).
+   - Referencia cruzada al trazado interno (ssec:tracing_def).
+   - Observacion explicita sobre limitacion de D_texto no normalizada
+     por severidad (Tarea 13 tratada como discusion + trabajo futuro).
+
+2. Discusion reescrita (Seccion VI):
+   - Eliminada la repeticion de cifras de Resultados.
+   - Estructura: (P1) Triangulacion metodologica de las 4 rutas
+                 (P2) Dialogo con estado del arte y Wang et al. 2020
+                 (P3) Rol especifico del visualizador
+                 (P4) 4 limitaciones incluyendo la de D_texto por severidad
+
+3. Overclaim residual suavizado:
+   L851: "confirman que la senal ECG no participa" ->
+   "son consistentes con que la senal ECG no participa"
+
+4. Conclusion reescrita (Seccion VII) con trabajo futuro especifico:
+   - Linea 1: Estrategias de mitigacion (Gradient-Blending, LPF adaptado
+              al regimen ECG-lenguaje).
+   - Linea 2: Evaluacion del visualizador con expertos clinicos
+              (cardiologos, residentes, protocolo tipo VisEval).
+   - Linea 3: Extension a modelos mas grandes, conjuntos externos,
+              IC bootstrap, normalizacion de D_texto por severidad.
+
+--------------------------------------------------------------------------------
+FASE 3 - DETALLE TECNICO Y GOLDEN THREAD
+--------------------------------------------------------------------------------
+
+1. Tabla tecnica de hiperparametros (tab:hyperparams) anadida en V-A:
+   - Preprocesamiento ECG (remuestreo 1000x12, z-score por derivacion)
+   - Codificador BiGRU (input 12->128, 1 capa bidireccional, hidden=128,
+     temporal_dim=256, 4 tokens temporales, token queries aprendidas,
+     dropout=0.1)
+   - Proyector latente (Linear -> GELU -> Linear -> LayerNorm)
+   - LLM base (Qwen3-0.6B, QLoRA NF4 doble cuantizacion, fp16)
+   - LoRA (r=8, alpha=16, dropout=0.05, targets q/k/v/o_proj)
+   - Optimizacion (AdamW, LR=2e-4, batch=1, accum=8, max_seq=512,
+     1 epoca, 26 pasos)
+
+2. Golden thread restaurado - 3 correcciones:
+   - Contribuciones (Introduccion): reescritas para alinear con las
+     4 rutas de diagnostico (contrafactual, ablacion, neutral, trazado).
+   - Nuevo parrafo de anticipacion del hallazgo principal
+     (convergencia de las 4 rutas) al final de la Introduccion.
+   - Seccion III.G "Modulo explicable": nuevo parrafo inicial que
+     anuncia las 4 rutas como metodo unificado con etiquetas (i)-(iv).
+
+3. Definicion teorica de dominancia textual (Tarea 20 - punto parcial):
+   - En L459 (Seccion IV) la interpretacion ahora esta anclada a
+     whenlanguage2026, keyspace2025 y wang2020multimodaltraining.
+   - PENDIENTE (a consultar): anadir definicion formal explicita en
+     la Introduccion.
+
+--------------------------------------------------------------------------------
+ESTADO ACTUAL DEL PAPER (2026-07-15)
+--------------------------------------------------------------------------------
+
+Lineas totales:        1362
+Bibitems definidos:    31
+Keys citadas unicas:   32
+Referencias huerfanas: 0
+Referencias rotas:     1 (kligfield2007ecg - falta bibitem)
+
+Cifras clave del experimento vigente (n=45 test, n=30 trazado):
+    EM = Token-F1 = 0.311
+    Acc_si/no = 0.556 (n=18)
+    QCFR = 0.089
+    ECFR = 0.000
+    D_texto = 0.089
+    cont_texto = 0.307
+    cont_ECG = -0.033
+    D_abl_texto = 0.340
+    Flip rate neutral = 0.978
+    30/30 casos TEXT_DOMINANT en trazado interno
+
+
+================================================================================
+PARTE 2 - LO QUE FALTA EN EL PAPER
+================================================================================
+
+1. Anadir bibitem de kligfield2007ecg (referencia AHA 2007 propuesta:
+   P. Kligfield et al., "Recommendations for the Standardization and
+   Interpretation of the Electrocardiogram: Part I," Circulation,
+   vol. 115, no. 10, pp. 1306-1324, 2007.)
+
+2. Justificar el subconjunto de 300 preguntas o ampliar el dataset
+   (Tarea 10 - se pospone hasta obtener resultados con dataset ampliado).
+
+3. Anadir definicion formal explicita de dominancia textual en la
+   Introduccion (Tarea 20 - punto pendiente de consulta).
+
+4. Ajustar el titulo (Tarea 17 - se pospone porque la usuaria quiere
+   mantener el titulo actual como direccion aspiracional).
+
+
+================================================================================
+PARTE 3 - LO QUE NECESITAS CAMBIAR DEL MODELO PARA Q3 SIN REJECT
+================================================================================
+
+DIAGNOSTICO HONESTO DEL MODELO ACTUAL
+
+El problema no es que el modelo muestre dominancia textual: ese es el
+hallazgo esperado. El problema es que las cifras hacen dificil defender
+que el hallazgo es interesante:
+
+- cont_ECG = -0.033 significa que el ECG DANA el desempeno. Un revisor
+  Q3 lee: "el proyector ECG esta roto o mal entrenado".
+- Test EM = 0.311 esta al nivel de azar. Un revisor lee: "el modelo no
+  aprendio la tarea".
+- Yes/No Acc = 0.556 con n=18 no es significativamente distinto de 0.5.
+- 30/30 TEXT_DOMINANT es uniforme, sin variacion. Un revisor lee:
+  "consecuencia trivial de un modelo colapsado".
+- Modelo colapsa a "no"/"none". Un revisor lee: "ECFR=0 es artefacto
+  de colapso, no de dominancia".
+- Entrenamiento 26 pasos, CPU, 1 epoca. "Prueba de concepto, no
+  experimento".
+- Dataset 300 preguntas. "No representativo".
+
+Con ese conjunto de cifras, un revisor Q3 va a decir:
+"Los autores documentan que un modelo mal entrenado ignora una
+modalidad. Eso es esperado. Cual es la aportacion?"
+
+--------------------------------------------------------------------------------
+PRIORIDAD 1 - CRITICO (sin esto, Reject casi seguro)
+--------------------------------------------------------------------------------
+
+1.1 Ampliar el dataset
+    - Minimo aceptable: 3000-5000 preguntas, idealmente ECG-QA completo
+      (~11000).
+    - Split 70/15/15 A NIVEL DE ECG (no de pregunta) para descartar fuga.
+    - Balancear por tipo de pregunta si es posible.
+
+1.2 Entrenar en GPU con multiples epocas
+    - Minimo: 5-10 epocas con validacion.
+    - Early stopping basado en perdida de validacion.
+    - Reportar curvas de train Y val en la figura (hoy solo train).
+
+1.3 Que el ECG APORTE positivamente
+    - La cifra critica es cont_ECG. Debe ser POSITIVA, aunque sea
+      pequena (>= 0.05).
+    - Si cont_ECG > 0 y cont_texto > cont_ECG, tienes dominancia
+      textual REAL. Ahora tienes "modelo que no usa la senal", que
+      es distinto.
+    - SIN cont_ECG positivo, el paper no defiende dominancia textual,
+      defiende fallo de alineacion. Es un paper distinto con menos venta.
+
+1.4 Que el modelo no colapse a un solo token
+    - Objetivo: respuestas diversas, aunque no siempre correctas.
+    - Metrica de diversidad: entropia de la distribucion de respuestas
+      o numero de tokens unicos generados.
+    - Si sigue colapsando, cambiar: temperature > 0, prompt engineering
+      o formato de tarea (multiple choice explicito en lugar de
+      generativo abierto).
+
+--------------------------------------------------------------------------------
+PRIORIDAD 2 - NECESARIOS PARA CREDIBILIDAD Q3
+--------------------------------------------------------------------------------
+
+2.1 Mejorar el encoder temporal
+    Tu encoder actual es un cuello de botella tecnico grave:
+    - BiGRU 1 capa, hidden=128, solo 4 tokens temporales para 1000
+      timesteps. Estas comprimiendo 250:1. Es demasiado.
+    - Cambiar a: 16-32 tokens temporales, 2 capas bidireccionales,
+      hidden >= 256.
+    - Alternativa: patch encoder tipo PatchTST o mini-Transformer
+      temporal como ITFormer.
+
+2.2 Rigor estadistico
+    - Intervalos de confianza bootstrap (n=1000 replicas) para
+      EM, F1, QCFR, ECFR, D_texto.
+    - Test de permutacion para la diferencia QCFR - ECFR (H0: no
+      hay diferencia).
+    - Test binomial para Yes/No Acc contra azar 0.5.
+
+2.3 Baselines reales, no solo ablacion
+    La ablacion (no_text/no_series) es un baseline interno. Necesitas
+    tambien:
+    - Un baseline no-LLM: Random Forest o LSTM sobre features del ECG
+      + BOW/embeddings de la pregunta. Responde: "un modelo mucho mas
+      simple lo hace mejor?".
+    - ECG serializado como texto: "que gana el proyector latente vs
+      serializar los numeros como texto?".
+    - Modelo pre-entrenado en ECG si es viable (ECG-Chat, CardioGPT).
+
+--------------------------------------------------------------------------------
+PRIORIDAD 3 - AYUDAN PERO NO BLOQUEAN
+--------------------------------------------------------------------------------
+
+3.1 LoRA mas agresivo
+    - Config actual (r=8, alpha=16, solo q/k/v/o_proj) es minima.
+    - Probar: r=16, alpha=32, agregar gate_proj, up_proj, down_proj
+      (feed-forward de Qwen).
+
+3.2 Modelo base ligeramente mas grande
+    - Qwen3-0.6B es muy pequeno. Si el hardware lo permite,
+      Qwen3-1.5B con QLoRA cabe en 12 GB.
+    - Ganas capacidad de razonamiento sin cambiar la arquitectura.
+
+3.3 Analisis por subgrupo
+    - Desagregar QCFR/ECFR/D_texto por tipo de pregunta (verificacion,
+      eleccion, consulta, comparacion) y por atributo clinico
+      (scp_code, noise, numeric_feature).
+    - Genera evidencia de que la dominancia textual varia segun contexto:
+      argumento fuerte que hoy no tienes.
+
+3.4 Piloto con expertos
+    - No hace falta un estudio formal.
+    - 3-5 cardiologos o residentes que usen el visualizador en 10 casos
+      y respondan un cuestionario breve (SUS o preguntas cerradas de
+      utilidad diagnostica).
+    - Con eso pasas de "trabajo futuro" a "evidencia preliminar de
+      usabilidad" y ganas mucho frente a un revisor Q3.
+
+--------------------------------------------------------------------------------
+ESCENARIOS DE PUBLICACION
+--------------------------------------------------------------------------------
+
+ESCENARIO A - Ampliar dataset + GPU + encoder mejorado
+    - Tiempo estimado: 2-4 semanas de reingenieria + reentrenamiento.
+    - Si cont_ECG > 0.05 y accuracy si/no > 0.65 con IC significativo:
+      Q3 sin reject viable, incluso Q2 en revistas de aplicaciones
+      medicas (IEEE JBHI, npj Digital Medicine si te esfuerzas).
+
+ESCENARIO B - Reformulacion sin re-entrenar
+    Si no puedes cambiar el modelo, reformula el paper de:
+        "Marco de auditoria de dominancia textual"
+    a:
+        "Deteccion temprana de fallo de alineacion multimodal en QA
+         clinico sobre ECG bajo regimen de bajos recursos"
+    Con ese frame:
+    - cont_ECG = -0.033 es el hallazgo, no la vergueenza.
+    - El paper documenta cuando el proyector latente NO logra transferir
+      informacion util al LLM.
+    - Las 4 rutas de diagnostico se venden como sistema de warning
+      temprano.
+    - Es publicable en Q3 (Applied Sciences, Sensors, IEEE Access) sin
+      cambiar el modelo, pero con tono muy distinto al actual.
+
+ESCENARIO C - Combinar A y B (RECOMENDADO)
+    - Entrenas mejor (Prioridad 1) pero tambien mantienes el frame
+      de deteccion de fallos.
+    - Es el camino mas robusto: si el modelo mejora, tienes dominancia
+      textual real; si no, tienes deteccion temprana de fallo de
+      alineacion.
+    - Es el que yo te recomendaria si tuviera que apostar.
+
+--------------------------------------------------------------------------------
+CONSEJO DIRECTO DEL ASESOR
+--------------------------------------------------------------------------------
+
+Si tu meta es Q3 sin reject en un plazo razonable, ejecuta en este orden:
+
+1. Amplia el dataset a 3000+ preguntas             (Prioridad 1.1)
+2. Entrena en GPU con 5+ epocas y early stopping   (Prioridad 1.2)
+3. Agranda el encoder temporal                     (Prioridad 2.1)
+   (es donde mas ganas por menos esfuerzo)
+4. Anade IC bootstrap                              (Prioridad 2.2)
+   (una tarde de trabajo, te da rigor estadistico)
+5. Corre el piloto con 3 expertos                  (Prioridad 3.4)
+   (1-2 semanas)
+
+Con esos 5 cambios tienes un paper defendible en Q3.
+Con solo 2-3 de esos cambios sigue siendo Reject probable.
+
+IMPORTANTE: no publiques con los numeros actuales aunque termines
+toda la Fase 4-5 de redaccion. El texto esta cada vez mejor, pero
+el modelo es el techo del paper y hoy el techo es demasiado bajo.
+
+
+================================================================================
+FIN DEL RESUMEN
+================================================================================

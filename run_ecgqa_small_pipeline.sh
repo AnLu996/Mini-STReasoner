@@ -20,6 +20,7 @@ set -Eeuo pipefail
 #   MAX_LEADS         ECG leads                                  (default: 12)
 #   INFER_SAMPLES     Stage-3 baseline samples                   (default: 20)
 #   TRAIN_SAMPLES     Stage-4 training samples                   (default: 300)
+#   VALID_SAMPLES     Stage-4 validation samples per epoch       (default: 50)
 #   EVAL_SAMPLES      Stage-5 test samples                       (default: 100)
 #   CF_SAMPLES        Stage-6 counterfactual samples             (default: 50)
 #   ABL_SAMPLES       Stage-6b modal-ablation samples            (default: 100)
@@ -28,6 +29,10 @@ set -Eeuo pipefail
 #   TRACE_METRIC      cosine | l2 (representational distance)     (default: cosine)
 #   TRACE_SEGMENTS    ECG segment interventions per case (V4)     (default: 6)
 #   EPOCHS            Training epochs                            (default: 1)
+#   PATIENCE          Early-stopping patience (0 = off)          (default: 3)
+#   EARLY_STOP_METRIC valid_loss | token_f1 | exact_match        (default: valid_loss)
+#   LR_SCHEDULER      cosine | linear | constant                 (default: cosine)
+#   WARMUP_RATIO      Warmup fraction of total steps             (default: 0.06)
 #   BATCH_SIZE        Training batch size                        (default: 1)
 #   GRAD_ACCUM        Gradient accumulation steps                (default: 8)
 #   MAX_SEQ_LEN       Max sequence length                        (default: 512)
@@ -49,6 +54,7 @@ TARGET_LENGTH="${TARGET_LENGTH:-1000}"
 MAX_LEADS="${MAX_LEADS:-12}"
 INFER_SAMPLES="${INFER_SAMPLES:-20}"
 TRAIN_SAMPLES="${TRAIN_SAMPLES:-300}"
+VALID_SAMPLES="${VALID_SAMPLES:-50}"
 EVAL_SAMPLES="${EVAL_SAMPLES:-100}"
 CF_SAMPLES="${CF_SAMPLES:-50}"
 ABL_SAMPLES="${ABL_SAMPLES:-100}"
@@ -57,6 +63,10 @@ TRACE_SAMPLES="${TRACE_SAMPLES:-30}"
 TRACE_METRIC="${TRACE_METRIC:-cosine}"
 TRACE_SEGMENTS="${TRACE_SEGMENTS:-6}"
 EPOCHS="${EPOCHS:-1}"
+PATIENCE="${PATIENCE:-3}"
+EARLY_STOP_METRIC="${EARLY_STOP_METRIC:-valid_loss}"
+LR_SCHEDULER="${LR_SCHEDULER:-cosine}"
+WARMUP_RATIO="${WARMUP_RATIO:-0.06}"
 BATCH_SIZE="${BATCH_SIZE:-1}"
 GRAD_ACCUM="${GRAD_ACCUM:-8}"
 MAX_SEQ_LEN="${MAX_SEQ_LEN:-512}"
@@ -102,7 +112,12 @@ run_stage "stage4_train" "$PYTHON" training/train_ecgqa_lora_small.py \
   --valid "$OUTPUT_DIR/processed_valid.jsonl" \
   --output_dir "$CKPT_DIR" \
   --epochs "$EPOCHS" \
+  --patience "$PATIENCE" \
+  --early_stop_metric "$EARLY_STOP_METRIC" \
+  --lr_scheduler "$LR_SCHEDULER" \
+  --warmup_ratio "$WARMUP_RATIO" \
   --max_samples "$TRAIN_SAMPLES" \
+  --valid_max_samples "$VALID_SAMPLES" \
   --batch_size "$BATCH_SIZE" \
   --grad_accum "$GRAD_ACCUM" \
   --max_seq_len "$MAX_SEQ_LEN" \
@@ -110,6 +125,10 @@ run_stage "stage4_train" "$PYTHON" training/train_ecgqa_lora_small.py \
   --device "$DEVICE" \
   --log_dir "$RESULTS_DIR" \
   "${QLORA_FLAG[@]}"
+
+run_stage "stage4b_curves" "$PYTHON" scripts/plot_training_curves.py \
+  --log "$RESULTS_DIR/training_log.jsonl" \
+  --output "$RESULTS_DIR/training_curves.png"
 
 run_stage "stage5_evaluate" "$PYTHON" scripts/evaluate_ecgqa_small.py \
   --model_path "$CKPT_DIR" \

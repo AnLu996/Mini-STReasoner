@@ -1,0 +1,71 @@
+(Transcrito por TurboScribe. Actualizar a Ilimitado para eliminar este mensaje.)
+
+A ver, en tu, en la presentación que hiciste, no, no entendí la parte del visualizador. ¿Podrías por favor explicarme bien qué has hecho ahí? Sí, sí, sí, por favor. Ah, el pay por sí.
+
+Pero no tienes la, la aplicación o. Sí. Sí. ¿Qué tal si hay algún comportamiento? . . . No, dentro de mi poca experiencia, mi conocimiento que se tiene, no, pero bueno, todos tenemos diferentes formas de trabajar, pero ahí, ahí colocas tu trazado representacional interno que yo lo tracuje como, digamos, aquí, eso es la explicabilidad del modelo ya, pero ahí, por ejemplo, la información como lo estás sacando, o sea, como, digamos, tú dices, no, caso dos, pero cuál es el caso dos, por ejemplo, no me dices, hace, realiza de 30 de 50 totales, eso es lo que es.
+
+Ningún. Ya y con la respuesta que te manda el entrenamiento modelo, no lo sé, o sea, esa es la que debería ser y el modelo que es lo que te manda. Ya, y si dices otro que sea, o sea, que tenga otra respuesta diferente, ¿cómo, cómo ves ahí? La original te refieres a la respuesta del modelo.
+
+Y la, y la que el modelo te envió fue esa, la, a ver, ya, y la original. O sea, la respuesta esperada es como la etiqueta de la pregunta. Ya y el original. 
+
+No es, no es diferente. O sea, me refiero a que sí es diferente, pero los términos no son. O sea, uno debería hacer ahí la etiquetada.
+
+No. Y. Espera, espera. No sé lo que vota el modelo, pues no.
+
+Ok, ya tienes esa, ya tienes esa pregunta. Y qué significa lo de arriba? O sea, digamos, ese es la entrada que significa eso. Ya.
+
+Ya. No. No.
+
+Ya es que, es que ahí yo tenía. Otra idea más. Más explicativa, no, porque ahí tú colocas entrada, pero ahí no hay ningún feedback.
+
+Y si es que fuese el feedback, la señal temporal que está al final está muy alejar. No. Entonces nadie, ya por los principios de gestal, ya tú sabes que, digamos, tienes diferentes grupos.
+
+Entonces nadie va a asociar que el SG está aquí abajo. No. Entonces no se sabe cuál es la señal temporal.
+
+Ok, como tu objetivo es. Por ahora es la explicabilidad. O sea, explicar para determinar dónde está el sesgo.
+
+No. O sea, ¿dónde? Real idea es determinar. No es solucionar el problema, sino, o sea, no es, digamos, ah, ¿por qué te está dando? Debería de darme.
+
+Un gordo o la respuesta que esté etiquetada, ¿no? Y ahí es bueno, porque el modelo. ¿Dónde, dónde está la falla? ¿Por qué el modelo no tomo? O sea que está. ¿Cómo el modelo está aprendiendo? ¿No? O sea, ¿qué hace que tenga la dominancia textual? ¿No? O sea, ¿qué hace? Porque el modelo no toma en cuenta.
+
+Eh, la serie temporal y sólo está tomando en cuenta lo textual. No. Entonces ese es un problema que supuestamente lo tienes que solucionar, pero no se puede solucionar mientras no se sepa dónde está la falla.
+
+O sea, ¿en qué, en qué parte? Entonces, se supone que está, digamos, lo que están realizando es un modelo, pues, usuario sería un usuario analista, un usuario de ciencia en la computación, ¿no? Con cierto conocimiento hoy. Entonces, ¿tú tomas las señas del electrocardiograma? ¿Estas señas del electrocardiograma? No, no sé. O sea, es que no, al final no.
+
+O sea, es que como no te ha hecho seguimiento, ya te has presentado la cosa. Entonces no sé muchas cosas. O sea, no sé qué has hecho, con qué te has encontrado.
+
+No lo sé. Eh, entonces. Se supone que estas series temporales deben tener alguna característica especial.
+
+No sé si esta serie temporal va a tener el categorama y tiene problemas o no tiene problemas. Por lo visto, no lo tiene. Pero yo no sé si en el data center dice, bueno, aquí hay algo que ya.
+
+Que se supone que ya nosotros sabemos que ya estaríamos un problema que ya sabemos. O sea, en este punto, en este tiempo acá justamente hay un problema. ¿Tienes así el dataset o no? Sólo tienen los electrocardiogramas.
+
+Ya. Ok. Entonces, ya supongamos que este sea toda la serie temporal.
+
+Ahora. Ahora. Aquí está pasando por un encode, pero si te das cuenta.
+
+El problema también podría ser el encode. Entonces ahí yo no sé. En cuál es el feedback que tú estás colocando.
+
+O sea, de dónde estás sacando esa información o cuál es la idea de. Porque ahí tú puedes. Bueno, ahorita que lo estás mostrando, ¿no? En código temporal.
+
+Impacto del texto no hay. Impacto del electrocardiograma cero diferencia. Sólo circula.
+
+Impacta texto no aplica. Ya. Pero cuál es el objetivo del encoder? Es reducir.
+
+Dirigirlo por ventanitas. O sea que el encode que estás utilizando es el. Contesta datos.
+
+El electrocardiograma pasa por otro procesamiento. Me estás aplicando el transporte. Estás aplicando un recorte.
+
+Y acá tienes el pico temporal encoder. ¿Qué es lo que te vota el temporal encoder? ¿Cómo sabemos que la serie que este encoder está bien? Que está reflejando lo que la serie temporal original. Hay métricas.
+
+¿Cómo sabríamos que eso está bien? ¿De dónde sacaste información? De este encode. De el mismo modelo. ¿Lo probaste y te salieron como resultados? O noticias.
+
+Ya. Ya tienes yo. ¿Cómo sabemos que está bien? Para entenderte.
+
+O sea el tru si lo usa el pico original. El B cru si lo usa el pico original. El temporal encoder.
+
+¿Cómo es el pico que está utilizando el encode en el final? ¿Con la referencia te acordas? ¿Con la referencia te acordas? ¿Con la referencia? ¿Con la referencia te acordas? ¿Con la referencia 11 no? Quiero entenderlo bien. ¿Cuál es tu idea de esto? ¿Cuál es tu idea de esto? Pero ¿a qué te refieres con el impacto del SG? ¿Cómo sacas ese impacto? No lo estabas haciendo. ¿Tiene el encoder que estás utilizando? ¿Tiene atención? Si tú quisieras dar explicabilidad solo al encode.
+
+¿A qué me refiero? ¿A qué te refieres con el impacto del SG? También tenemos que saber qué partes de la serie temporal son las que está tomando el modelo. Para eso hay que ver la estructura o de pronto emplear para series temporales. Analizar explicabilidad de series temporales.
+
+(Este archivo dura más de 30 minutos. Actualizar a Ilimitado en https://turboscribe.ai/es/ para transcribir archivos de hasta 10 horas.)

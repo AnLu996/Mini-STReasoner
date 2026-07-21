@@ -10,20 +10,32 @@ It reads the ``processed_*.jsonl`` files from Stage 2 (question + ECG ``.npy`` +
 answer), logs per-step train loss and per-epoch validation metrics, and writes a
 checkpoint in the exact layout :func:`inference.runtime.load_checkpoint` expects.
 
+Multi-epoch runs are selected on validation, not on the last epoch: the
+checkpoint is rewritten only when ``--early_stop_metric`` improves, and training
+stops after ``--patience`` epochs without improvement. A warmup + decay schedule
+replaces the previously constant learning rate.
+
+``training_log.jsonl`` is appended to, never truncated. Every record carries the
+``run`` id emitted at startup, so repeated runs against the same ``--log_dir``
+stay distinguishable and ``scripts/plot_training_curves.py`` can plot the latest
+run or overlay all of them.
+
 Example::
 
     python training/train_ecgqa_lora_small.py \\
       --train data/ecgqa_small/processed_train.jsonl \\
       --valid data/ecgqa_small/processed_valid.jsonl \\
       --output_dir checkpoints/ecgqa_small_lora \\
-      --epochs 1 --max_samples 300 --batch_size 1 --grad_accum 8 --max_seq_len 512
+      --epochs 8 --patience 3 --max_samples 300 --batch_size 1 --grad_accum 8
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -208,6 +220,26 @@ def save_checkpoint(args: argparse.Namespace, tokenizer, model: MiniSTReasoner, 
     (out / "config.json").write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 
 
+def build_scheduler(optimizer, args: argparse.Namespace, total_steps: int):
+    """Warmup lineal + decaimiento sobre los optimizer steps de toda la corrida.
+
+    Antes el learning rate era constante en 2e-4 durante los 26 pasos de la unica
+    epoca. Con varias epocas eso desestabiliza el final del entrenamiento, que es
+    justo donde se selecciona el checkpoint.
+    """
+    from transformers import (
+        get_constant_schedule_with_warmup,
+        get_cosine_schedule_with_warmup,
+        get_linear_schedule_with_warmup,
+    )
+
+    warmup = max(0, int(total_steps * args.warmup_ratio))
+    if args.lr_scheduler == "constant":
+        return get_constant_schedule_with_warmup(optimizer, num_warmup_steps=warmup)
+    factory = get_cosine_schedule_with_warmup if args.lr_scheduler == "cosine" else get_linear_schedule_with_warmup
+    return factory(optimizer, num_warmup_steps=warmup, num_training_steps=max(total_steps, warmup + 1))
+
+
 # --------------------------------------------------------------------------- #
 # Validation                                                                   #
 # --------------------------------------------------------------------------- #
@@ -262,6 +294,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_seq_len", type=int, default=512)
     parser.add_argument("--max_leads", type=int, default=12)
     parser.add_argument("--learning_rate", type=float, default=2e-4)
+    # Seleccion por validacion. patience=0 desactiva el early stopping (se corren
+    # todas las epocas), pero el mejor checkpoint se sigue guardando.
+    parser.add_argument("--patience", type=int, default=3,
+                        help="epocas sin mejora antes de parar; 0 = sin early stopping")
+    parser.add_argument("--min_delta", type=float, default=0.0,
+                        help="mejora minima para considerar que una epoca mejoro")
+    parser.add_argument("--early_stop_metric", choices=["valid_loss", "token_f1", "exact_match"],
+                        default="valid_loss", help="metrica de seleccion del mejor checkpoint")
+    # Programacion del learning rate (antes era constante).
+    parser.add_argument("--lr_scheduler", choices=["cosine", "linear", "constant"], default="cosine")
+    parser.add_argument("--warmup_ratio", type=float, default=0.06)
     parser.add_argument("--num_temporal_tokens", type=int, default=4)
     parser.add_argument("--temporal_hidden_dim", type=int, default=128)
     parser.add_argument("--temporal_dim", type=int, default=256)
@@ -305,9 +348,39 @@ def main() -> None:
     parameters = [p for p in model.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(parameters, lr=args.learning_rate)
 
+    # El ultimo micro-batch de cada epoca se descarga en un step parcial, asi que
+    # el numero de optimizer steps por epoca es el techo, no el suelo.
+    steps_per_epoch = max(1, math.ceil(len(loader) / args.grad_accum))
+    total_steps = steps_per_epoch * args.epochs
+    scheduler = build_scheduler(optimizer, args, total_steps)
+    print(f"[train] steps/epoch={steps_per_epoch} total_steps={total_steps} "
+          f"scheduler={args.lr_scheduler} warmup={int(total_steps * args.warmup_ratio)}")
+
     args.log_dir.mkdir(parents=True, exist_ok=True)
     training_log = args.log_dir / "training_log.jsonl"
-    log_handle = training_log.open("w", encoding="utf-8")
+    # Append, nunca truncar: el historico de corridas anteriores se conserva y cada
+    # registro queda marcado con el id de su corrida.
+    run_id = time.strftime("%Y%m%dT%H%M%S")
+    log_handle = training_log.open("a", encoding="utf-8")
+
+    def log(record: dict[str, Any]) -> None:
+        log_handle.write(json.dumps({"run": run_id, **record}) + "\n")
+        log_handle.flush()
+
+    log({"event": "run_start", "epochs": args.epochs, "train_samples": len(train_rows),
+         "valid_samples": len(valid_rows), "steps_per_epoch": steps_per_epoch,
+         "total_steps": total_steps, "learning_rate": args.learning_rate,
+         "lr_scheduler": args.lr_scheduler, "warmup_ratio": args.warmup_ratio,
+         "patience": args.patience, "early_stop_metric": args.early_stop_metric,
+         "num_temporal_tokens": args.num_temporal_tokens,
+         "temporal_hidden_dim": args.temporal_hidden_dim, "device": device, "qlora": qlora})
+
+    higher_is_better = args.early_stop_metric != "valid_loss"
+    best_score: float | None = None
+    best_epoch: int | None = None
+    epochs_without_improvement = 0
+    saved_best = False
+    stopped_early = False
 
     global_step = micro_step = 0
     last_loss = float("nan")
@@ -315,45 +388,97 @@ def main() -> None:
     for epoch in range(args.epochs):
         model.train()
         optimizer.zero_grad(set_to_none=True)
+        # Media de la epoca sobre TODOS los micro-batches. Antes se reportaba
+        # `last_loss`, la perdida de un unico micro-batch, como si fuera la de la epoca.
+        epoch_loss_sum = 0.0
+        epoch_batches = 0
         for batch in loader:
             output = model(**batch)
+            full_loss = float(output.llm_output.loss.item())
+            epoch_loss_sum += full_loss
+            epoch_batches += 1
             loss = output.llm_output.loss / args.grad_accum
             loss.backward()
             micro_step += 1
             if micro_step % args.grad_accum == 0:
                 torch.nn.utils.clip_grad_norm_(parameters, 1.0)
                 optimizer.step()
+                scheduler.step()
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
                 last_loss = float(loss.item() * args.grad_accum)
                 if global_step % args.log_every == 0:
-                    record = {"epoch": epoch + 1, "step": global_step, "train_loss": last_loss}
-                    print(f"epoch={epoch + 1} step={global_step} train_loss={last_loss:.4f}", flush=True)
-                    log_handle.write(json.dumps(record) + "\n")
-                    log_handle.flush()
+                    lr_now = float(optimizer.param_groups[0]["lr"])
+                    print(f"epoch={epoch + 1} step={global_step} train_loss={last_loss:.4f} lr={lr_now:.2e}", flush=True)
+                    log({"epoch": epoch + 1, "step": global_step, "train_loss": last_loss, "lr": lr_now})
         # Flush a trailing partial accumulation window.
         if micro_step % args.grad_accum:
             torch.nn.utils.clip_grad_norm_(parameters, 1.0)
             optimizer.step()
+            scheduler.step()
             optimizer.zero_grad(set_to_none=True)
+            global_step += 1
 
+        train_loss_epoch = epoch_loss_sum / max(epoch_batches, 1)
         valid_loss, em, f1 = evaluate_valid(
             model, tokenizer, config, valid_rows, collator, device, args.max_new_tokens, args.valid_max_samples
         )
-        metrics = {"epoch": epoch + 1, "valid_loss": valid_loss, "exact_match": em, "token_f1": f1}
-        epoch_metrics.append(metrics)
-        print(f"[valid] epoch={epoch + 1} valid_loss={valid_loss} exact_match={em} token_f1={f1}", flush=True)
-        log_handle.write(json.dumps(metrics) + "\n")
-        log_handle.flush()
+        score = {"valid_loss": valid_loss, "token_f1": f1, "exact_match": em}[args.early_stop_metric]
+        improved = score is not None and (
+            best_score is None
+            or (score > best_score + args.min_delta if higher_is_better else score < best_score - args.min_delta)
+        )
+        if improved:
+            best_score, best_epoch = score, epoch + 1
+            epochs_without_improvement = 0
+            save_checkpoint(args, tokenizer, model, qlora)
+            saved_best = True
+        elif score is not None:
+            epochs_without_improvement += 1
 
+        metrics = {
+            "epoch": epoch + 1,
+            "train_loss": train_loss_epoch,
+            "valid_loss": valid_loss,
+            "exact_match": em,
+            "token_f1": f1,
+            "lr": float(optimizer.param_groups[0]["lr"]),
+            "improved": improved,
+        }
+        epoch_metrics.append(metrics)
+        print(f"[valid] epoch={epoch + 1} train_loss={train_loss_epoch:.4f} valid_loss={valid_loss} "
+              f"exact_match={em} token_f1={f1} {'<- mejor' if improved else ''}", flush=True)
+        log(metrics)
+
+        if args.patience and epochs_without_improvement >= args.patience:
+            stopped_early = True
+            print(f"[train] early stopping: {epochs_without_improvement} epocas sin mejorar "
+                  f"{args.early_stop_metric} (mejor: epoca {best_epoch} = {best_score})", flush=True)
+            break
+
+    # Sin validacion no hay nada que seleccionar: se guarda el estado final.
+    if not saved_best:
+        save_checkpoint(args, tokenizer, model, qlora)
+        best_epoch = len(epoch_metrics) or None
+
+    log({"event": "run_end", "epochs_ran": len(epoch_metrics), "best_epoch": best_epoch,
+         "best_score": best_score, "stopped_early": stopped_early})
     log_handle.close()
-    save_checkpoint(args, tokenizer, model, qlora)
 
     summary = {
+        "run": run_id,
         "train_samples": len(train_rows),
         "valid_samples": len(valid_rows),
+        "epochs_requested": args.epochs,
+        "epochs_ran": len(epoch_metrics),
         "steps": global_step,
         "final_train_loss": last_loss,
+        "best_epoch": best_epoch,
+        "best_score": best_score,
+        "early_stop_metric": args.early_stop_metric,
+        "stopped_early": stopped_early,
+        "checkpoint_is_best": saved_best,
+        "lr_scheduler": args.lr_scheduler,
         "epoch_metrics": epoch_metrics,
         "checkpoint": str(args.output_dir),
         "device": device,

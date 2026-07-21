@@ -33,6 +33,7 @@ import subprocess
 import sys
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -124,32 +125,56 @@ def select_subset(
     ``seed`` then greedily kept while respecting both the question budget and the
     unique-ECG budget. A candidate is admitted only if every ECG it needs is
     already selected or there is room left in the unique-ECG budget.
+
+    Two passes over the split, so the full candidate set never sits in memory as
+    parsed rows: the first pass keeps only ``(ordinal, ecg_ids)`` and decides
+    *which* ordinals win; the second re-reads the split and materialises just
+    those. The train split of ECG-QA paraphrased has ~267k questions, and holding
+    them all as dicts was hundreds of MB for a selection of a few thousand.
+
+    The selection is bit-for-bit identical to the previous single-pass version:
+    ``random.Random(seed).shuffle`` produces a permutation that depends only on
+    the seed and the list length, so shuffling the lightweight tuples yields the
+    same order as shuffling the full rows did.
     """
-    candidates: list[dict[str, Any]] = []
-    for raw in iter_split_samples(repo_dir, split):
-        qtype = str(raw.get("question_type", ""))
-        if question_types and qtype not in question_types:
-            continue
+    def keep(raw: dict[str, Any]) -> list[int] | None:
+        if question_types and str(raw.get("question_type", "")) not in question_types:
+            return None
         ecg_ids = [int(e) for e in _as_list(raw.get("ecg_id"))]
-        if not ecg_ids:
-            continue
-        candidates.append({"raw": raw, "ecg_ids": ecg_ids})
+        return ecg_ids or None
 
-    random.Random(seed).shuffle(candidates)
+    # Pass 1: ordinal + ECG ids only.
+    index: list[tuple[int, list[int]]] = []
+    for ordinal, raw in enumerate(iter_split_samples(repo_dir, split)):
+        ecg_ids = keep(raw)
+        if ecg_ids is not None:
+            index.append((ordinal, ecg_ids))
 
-    chosen: list[dict[str, Any]] = []
+    total_candidates = len(index)
+    random.Random(seed).shuffle(index)
+
+    chosen_order: list[int] = []
     used_ecgs: set[int] = set()
-    for candidate in candidates:
-        if len(chosen) >= max_questions:
+    for ordinal, ecg_ids in index:
+        if len(chosen_order) >= max_questions:
             break
-        needed = set(candidate["ecg_ids"])
-        new_ecgs = needed - used_ecgs
+        new_ecgs = set(ecg_ids) - used_ecgs
         if len(used_ecgs) + len(new_ecgs) > max_unique_ecgs:
             continue
         used_ecgs |= new_ecgs
-        chosen.append(candidate)
+        chosen_order.append(ordinal)
+    del index
+
+    # Pass 2: materialise only the winners, restoring the shuffled order.
+    wanted = set(chosen_order)
+    by_ordinal: dict[int, dict[str, Any]] = {}
+    for ordinal, raw in enumerate(iter_split_samples(repo_dir, split)):
+        if ordinal in wanted:
+            by_ordinal[ordinal] = {"raw": raw, "ecg_ids": [int(e) for e in _as_list(raw.get("ecg_id"))]}
+    chosen = [by_ordinal[o] for o in chosen_order if o in by_ordinal]
+
     log(f"split '{split}': selected {len(chosen)} questions over {len(used_ecgs)} unique ECGs "
-        f"(from {len(candidates)} candidates)")
+        f"(from {total_candidates} candidates)")
     return chosen
 
 
@@ -250,6 +275,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--no_download", action="store_true",
                         help="Do not fetch WFDB signals (manifest paths are still written)")
     parser.add_argument("--retries", type=int, default=3)
+    parser.add_argument("--download_workers", type=int, default=8,
+                        help="descargas WFDB concurrentes (1 = comportamiento en serie anterior)")
     parser.add_argument("--force", action="store_true", help="Rebuild the manifest even if it exists")
     return parser.parse_args()
 
@@ -281,12 +308,31 @@ def main() -> None:
     if args.no_download:
         log(f"--no_download set; skipping {len(unique_ecgs)} WFDB records")
     else:
-        log(f"downloading {len(unique_ecgs)} unique PTB-XL records into {signals_root}")
-        for index, ecg_id in enumerate(unique_ecgs, 1):
-            if download_record(ecg_id, signals_root, args.ptbxl_url, args.retries):
-                downloaded_ok += 1
-            if index % 25 == 0 or index == len(unique_ecgs):
-                log(f"  signals {index}/{len(unique_ecgs)} ({downloaded_ok} ok)")
+        # Descarga concurrente: cada ecg_id escribe en rutas propias, asi que los
+        # workers no compiten. En serie, unos miles de registros a ~270 KB cada uno
+        # estaban dominados por la latencia de ida y vuelta, no por el ancho de banda.
+        workers = max(1, args.download_workers)
+        log(f"downloading {len(unique_ecgs)} unique PTB-XL records into {signals_root} "
+            f"({workers} workers)")
+        done = 0
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(download_record, ecg_id, signals_root, args.ptbxl_url, args.retries): ecg_id
+                for ecg_id in unique_ecgs
+            }
+            for future in as_completed(futures):
+                done += 1
+                try:
+                    if future.result():
+                        downloaded_ok += 1
+                except Exception as exc:  # noqa: BLE001 - un registro no debe tumbar la corrida
+                    log(f"[warn] record {futures[future]} raised {exc!r}")
+                if done % 100 == 0 or done == len(unique_ecgs):
+                    log(f"  signals {done}/{len(unique_ecgs)} ({downloaded_ok} ok)")
+        missing = len(unique_ecgs) - downloaded_ok
+        if missing:
+            log(f"[warn] {missing} registros no se pudieron descargar; sus preguntas se "
+                f"descartaran en la etapa 2 (prepare)")
 
     by_split: dict[str, int] = {}
     by_qtype: dict[str, int] = {}

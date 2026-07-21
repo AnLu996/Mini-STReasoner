@@ -1,0 +1,298 @@
+================================================================================
+CORRIDA B · ENCODER AMPLIADO Y CORRECCION DE LOS DEFECTOS DE ESCALA
+Mini-STReasoner · ECG-QA 5.000 preguntas · RTX 4050 Laptop 6 GB
+================================================================================
+
+Generado: 2026-07-21
+Artefactos:  outputs/ecgqa_5k_encoder_b/
+Checkpoint:  checkpoints/ecgqa_5k_encoder_b/
+Comparacion: RESULTADOS_CORRIDA_A.txt · RESULTADOS_FASE2_RECALIBRACION.txt
+
+QUE PRUEBA ESTA CORRIDA
+  Corrida A dejo un diagnostico sin cerrar: cont_ECG = 0,0063 sugeria que la
+  senal no contribuia, pero no se sabia por que. Antes de lanzar esta corrida se
+  encontro la causa mecanica -la atencion temporal del encoder era un promedio
+  uniforme- y se corrigieron los tres defectos que la producian.
+
+  >>> RESULTADO EN UNA LINEA: el diagnostico mecanico se confirma por completo,
+  >>> el objetivo operativo no se alcanza, y en el camino aparece un problema
+  >>> nuevo con la propia definicion del indice de dominancia (seccion 6).
+
+ADVERTENCIA DE ATRIBUCION
+  Esta corrida cambia TRES cosas a la vez respecto de Corrida A. No es una
+  ablacion de variable unica y no permite decir cual pesa mas. Hay evidencia
+  independiente de cada mecanismo -la atencion medida directamente aqui, la
+  escala del proyector aislada en RESULTADOS_STBENCH_ALINEACION.txt seccion 6, y
+  la capacidad via el probe lineal- pero atribuir entre ellas exige una ablacion
+  por separado que no se corrio.
+
+
+================================================================================
+1. CONFIGURACION: QUE CAMBIA RESPECTO DE CORRIDA A
+================================================================================
+
+    parametro                    Corrida A        Corrida B
+    num_temporal_tokens                  4               32
+    temporal_hidden_dim                128              256
+    temporal_num_layers                  1                2
+    query_init_std                    0,02              1,0
+    match_embedding_scale               no               si
+    epocas ejecutadas                    7                5
+    resto                          identico         identico
+
+  Los tres cambios y su motivo:
+
+  a) CAPACIDAD (32 tokens, 2 capas, hidden 256). La compresion de 1000 pasos en
+     4 tokens era el diagnostico original de Corrida A.
+
+  b) ESCALA DEL PROYECTOR (match_embedding_scale). El proyector terminaba en una
+     LayerNorm de ganancia 1, emitiendo tokens de norma 32 mientras los
+     embeddings de Qwen3-0.6B tienen norma 0,83: los tokens temporales entraban
+     al LLM 38,9 veces fuera de escala.
+
+  c) ESCALA DE LAS CONSULTAS DE ATENCION (query_init_std). Es el defecto de
+     raiz, descrito en la seccion 2.
+
+
+================================================================================
+2. LA CAUSA RAIZ, MEDIDA ANTES Y DESPUES
+================================================================================
+
+  El encoder calculaba una matriz de atencion [tokens, T] que nunca se
+  persistia. Exportada por primera vez (xai/attention_export.py):
+
+    metrica                              Corrida A     Corrida B
+    norma media de token_queries             0,352        15,979
+    entropia media por token                 0,9999        0,949
+    entropia MINIMA por token                0,9998        0,4154
+    pico del perfil de masa                  0,0201        0,0236
+    (uniforme seria 0,0200)
+
+  La entropia esta normalizada: 1,0 es una distribucion uniforme sobre los 1000
+  pasos, 0 es mirar un unico instante.
+
+  EN CORRIDA A LA ATENCION NO ATENDIA. Verificado sobre la matriz cruda, sin
+  binning: el peso uniforme es 0,001000 y el real iba de 0,000924 a 0,001099, o
+  sea el paso mas atendido recibia un 10% mas que un promedio plano. Los cuatro
+  tokens correlacionaban entre 0,72 y 0,91: no se especializaban.
+
+  EL MECANISMO. token_queries se inicializaba como randn*0,02, con norma 0,32, y
+  tras entrenar quedaba en 0,35. Se multiplica contra salidas del encoder
+  pasadas por LayerNorm, cuya norma es sqrt(256) = 16, y el producto se divide
+  por sqrt(256). Los logits abarcaban 0,18 cuando un softmax sobre 1000 pasos
+  necesita del orden de log(1000) = 6,9 para apartarse de uniforme: 38 veces
+  menos. Y el softmax uniforme es una region plana, asi que el gradiente casi no
+  podia salir de ahi.
+
+  EN CORRIDA B SI ATIENDE. La entropia minima de 0,4154 indica tokens
+  fuertemente concentrados en ventanas concretas. La media de 0,949 dice que la
+  mayoria sigue siendo difusa, pero ya hay especializacion real.
+
+  Esto explica mecanicamente tres observaciones previas que parecian
+  independientes:
+    - el ruido gaussiano de media cero se cancelaba (seccion 9 de Corrida A)
+      porque el pooling era literalmente un promedio sobre 1000 muestras;
+    - el contenido frecuencial se destruia, por la misma razon;
+    - cont_ECG rondaba cero porque la representacion era casi la media temporal
+      de una senal ya normalizada, es decir casi constante.
+
+
+================================================================================
+3. FIDELIDAD DEL ENCODER (probe lineal, n=250)
+================================================================================
+
+  Responde la pregunta abierta de la revision de tesis, y en terminos clinicos:
+  la frecuencia dominante de un ECG es su ritmo cardiaco.
+
+    objetivo                    A entrenado   A sin entrenar   B entrenado
+    frecuencia dominante             0,1565           0,2469        0,3290
+    autocorrelacion lag-1            0,8550           0,8643        0,8545
+    rango                            0,3462           0,2901        0,4105
+
+  LA COMPARACION QUE IMPORTA es contra el encoder SIN ENTRENAR. En Corrida A el
+  encoder entrenado representaba el ritmo cardiaco PEOR que un GRU con pesos
+  aleatorios (0,1565 frente a 0,2469): el entrenamiento degradaba la
+  caracteristica clinicamente mas relevante. En Corrida B lo representa
+  claramente mejor (0,3290).
+
+  Los objetivos mean y std salen nan o cero en ambas: el z-score se aplica dos
+  veces, en prepare_ecg_signals.py y otra vez dentro del encoder, tal como
+  registraba el defecto 10 de Corrida A. La escala absoluta se descarta por
+  diseno, de modo que la amplitud de la senal es irrecuperable desde esta
+  representacion.
+
+
+================================================================================
+4. ENTRENAMIENTO Y DESEMPENO PREDICTIVO
+================================================================================
+
+    seleccion de checkpoint          Corrida A        Corrida B
+    mejor epoca                       4 de 7           5 de 5
+    valid_loss                        0,5473           0,5359
+    token_f1 validacion               0,4749           0,4997
+    detencion temprana                   si               no
+
+  Corrida A sobreajustaba desde la epoca 2 y paro por paciencia agotada. Corrida
+  B seguia mejorando en la ultima epoca, lo que indica que la capacidad anadida
+  se esta usando y que la corrida quedo corta.
+
+    test (n=750)                     Corrida A        Corrida B      delta
+    Token-F1                            0,3889           0,4009    +0,0121
+    Exact Match                         0,2800           0,2600    -0,0200
+    Yes/No Accuracy                     0,5983           0,5774    -0,0209
+
+  El desempeno predictivo queda practicamente plano. No es el objetivo de esta
+  corrida, pero conviene decirlo sin adornos: corregir la arquitectura no
+  mejoro la exactitud.
+
+
+================================================================================
+5. ABLACION MODAL: EL OBJETIVO NO SE ALCANZA, PERO SE ACERCA
+================================================================================
+
+    configuracion (Token-F1)         Corrida A        Corrida B
+    full                                0,3880           0,4200
+    no_text                             0,0025           0,0254
+    no_series                           0,3817           0,3836
+    conflict_text                       0,3718           0,4050
+
+    cont_texto                          0,3855           0,3946
+    cont_ECG                            0,0063           0,0364
+    dominancia por ablacion             0,3792           0,3582
+
+  cont_ECG se multiplica por 5,8 pero queda en 0,0364, por debajo del umbral
+  operativo de 0,05 que el propio plan de mejoras fijaba como condicion para
+  defender dominancia textual con la senal efectivamente en juego.
+
+  LECTURA. La contribucion del ECG dejo de ser indistinguible de cero y paso a
+  ser medible, mientras la exactitud global no se movio. Es decir, el modelo se
+  apoya mas en la senal sin rendir mejor: la mejora es de ANCLAJE, no de
+  desempeno. Para la tesis eso es lo relevante, porque lo que se audita es de
+  que depende la respuesta, no cuanto acierta.
+
+
+================================================================================
+6. HALLAZGO INESPERADO: EL INDICE D_texto ESTA CONFUNDIDO
+================================================================================
+
+  Las metricas contrafactuales apuntan en direccion CONTRARIA a la ablacion.
+
+    metrica                          Corrida A        Corrida B
+    QCFR (reescritura de pregunta)      0,2800           0,4900
+    ECFR con oclusion temporal          0,1500           0,0100
+    ECFR con mascara de derivaciones    0,0900           0,0100
+    ECFR con ruido                      0,0100           0,0150
+    ECFR con spike                      0,0050           0,0300
+    D_texto = QCFR - ECFR (oclusion)    0,1300           0,4800
+    tasa de cambio con pregunta neutral 0,8600           0,9950
+    respuestas originales distintas         32               39
+
+  Leido de forma literal, Corrida B seria MUCHO MAS textualmente dominante
+  (D_texto 0,48 frente a 0,13). Pero la ablacion dice lo contrario, que el ECG
+  contribuye seis veces mas. Ambas cosas son ciertas y miden fenomenos
+  distintos:
+
+  a) cont_ECG (ablacion) elimina la modalidad ENTERA. Corrida B la necesita mas.
+
+  b) ECFR (contrafactual) perturba PARCIALMENTE la senal, ocluyendo un 25%. Con
+     4 tokens que promedian todo, tapar un cuarto de la senal desplaza el
+     promedio un cuarto y voltea la respuesta. Con 32 tokens enfocados, tapar
+     una ventana inutiliza unos pocos y los demas siguen cubriendo el resto. Un
+     ECFR mas bajo no significa que el modelo use menos el ECG: significa que es
+     MAS ROBUSTO a una oclusion parcial. Es lo que uno esperaria de un encoder
+     que funciona mejor.
+
+  c) QCFR sube de 0,28 a 0,49. La reescritura preserva el significado, asi que
+     un 49% de cambios es un problema de robustez a parafrasis, peor que en
+     Corrida A. La tasa con pregunta neutral sube a 0,995.
+
+  CONSECUENCIA METODOLOGICA. D_texto = QCFR - ECFR resta dos cantidades que no
+  son conmensurables: una mide FRAGILIDAD ante una reescritura del texto, la
+  otra mide ROBUSTEZ ante una perturbacion parcial de la senal. Un modelo puede
+  volverse a la vez mas fragil al texto y mas anclado en la senal, y el indice
+  lo reportara como "mas textualmente dominante". Es exactamente lo que ocurre
+  aqui.
+
+  Es un problema distinto y adicional al de la calibracion documentado en
+  RESULTADOS_FASE2_RECALIBRACION.txt. Aquel decia que la magnitud de D_texto
+  depende de que intervencion se elija; este dice que su SIGNO puede enganar
+  incluso con la intervencion bien elegida.
+
+  RECOMENDACION. No usar D_texto como metrica unica. Reportarlo junto a la
+  contribucion por ablacion, que no comparte el problema porque elimina la
+  modalidad completa en vez de perturbarla, y declarar explicitamente que miden
+  cosas distintas.
+
+
+================================================================================
+7. SINTESIS
+================================================================================
+
+  SE CONFIRMA
+    - La cadena causal completa, con cada eslabon medido: consultas mal
+      escaladas -> softmax uniforme -> promedio temporal -> contenido
+      frecuencial destruido -> cont_ECG cercano a cero.
+    - Corregirla funciona en lo mecanico: la atencion se concentra (entropia
+      minima 0,9998 -> 0,4154) y el ritmo cardiaco pasa a estar por encima de la
+      linea base sin entrenar (0,1565 -> 0,3290).
+    - El cuello de botella era arquitectonico, como concluia Corrida A. Ahora
+      esta identificado con precision y no solo postulado.
+
+  NO SE ALCANZA
+    - cont_ECG = 0,0364 frente al umbral de 0,05.
+    - El desempeno predictivo no mejora.
+    - La robustez a parafrasis EMPEORA (QCFR 0,28 -> 0,49).
+
+  SE DESCUBRE
+    - D_texto confunde fragilidad textual con robustez de la senal (seccion 6).
+
+  LECTURA HONESTA PARA EL ARTICULO. Se pasa de "el modelo ignora la senal por
+  razones desconocidas" a "el modelo la ignoraba por tres defectos concretos y
+  medibles; corregidos, la usa casi seis veces mas, y lo que queda por cerrar
+  parece limite de escala". Eso es una contribucion, pero NO permite afirmar que
+  el problema este resuelto.
+
+
+================================================================================
+8. LO QUE SIGUE
+================================================================================
+
+  1. Ablacion de los tres cambios por separado, para atribuir. Es lo que falta
+     para poder afirmar cual mecanismo pesa mas.
+  2. Mas epocas. Corrida B no habia dejado de mejorar en la quinta, asi que el
+     valor de cont_ECG probablemente no es el techo de esta configuracion.
+  3. Intervalos de confianza (Fase 4 del plan). cont_ECG = 0,0364 frente a un
+     umbral de 0,05 sobre n=300 exige un intervalo antes de concluir que no lo
+     alcanza.
+  4. Conservar la escala de la senal. El z-score doble descarta la amplitud, que
+     es una de las cantidades clinicamente relevantes.
+  5. Investigar el aumento de QCFR. Que la robustez a parafrasis empeore al
+     ampliar el encoder no tiene explicacion todavia.
+
+
+================================================================================
+9. COMO REPRODUCIRLO
+================================================================================
+
+  python training/train_ecgqa_lora_small.py \
+      --train data/ecgqa_5k/processed_train.jsonl \
+      --valid data/ecgqa_5k/processed_valid.jsonl \
+      --output_dir checkpoints/ecgqa_5k_encoder_b \
+      --log_dir outputs/ecgqa_5k_encoder_b \
+      --epochs 5 --patience 2 --max_samples 3500 --valid_max_samples 200 \
+      --num_temporal_tokens 32 --temporal_hidden_dim 256 --temporal_dim 256 \
+      --temporal_num_layers 2 --query_init_std 1.0 --match_embedding_scale
+
+  python xai/attention_export.py --model-path checkpoints/ecgqa_5k_encoder_b \
+      --data data/ecgqa_5k/processed_test.jsonl --data-format ecgqa \
+      --output outputs/ecgqa_5k_encoder_b/encoder_attention.jsonl
+
+  python scripts/encoder_fidelity_probe.py --model-path checkpoints/ecgqa_5k_encoder_b \
+      --data data/ecgqa_5k/processed_test.jsonl --data-format ecgqa --limit 250
+
+  python scripts/recalibrate_ecg_counterfactual.py \
+      --results outputs/ecgqa_5k_encoder_b/counterfactual_results.jsonl
+
+================================================================================
+FIN
+================================================================================

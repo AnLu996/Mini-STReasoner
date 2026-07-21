@@ -30,11 +30,41 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from inference.runtime import load_checkpoint, predict  # noqa: E402
-from scripts.score_stbench import normalize_choice  # noqa: E402
+from scripts.score_stbench import extract_tag_content, normalize_choice  # noqa: E402
 from training.dataset_loader import iter_jsonl  # noqa: E402
 
 
 CONDITIONS = ("original", "swapped", "zeroed")
+
+# Relative tolerance when both sides of a comparison parse as numbers, so that
+# "0.2618" and "0.26180" count as the same alignment answer.
+NUMERIC_TOLERANCE = 0.01
+
+
+def _as_number(text: str) -> float | None:
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def match_text(prediction: Any, target: Any) -> bool:
+    """Compare free-form answers, as used by the alignment task."""
+    left = extract_tag_content(str(prediction or "")).strip().lower()
+    right = extract_tag_content(str(target or "")).strip().lower()
+    if left == right:
+        return True
+    left_number, right_number = _as_number(left), _as_number(right)
+    if left_number is None or right_number is None:
+        return False
+    scale = max(abs(right_number), 1e-8)
+    return abs(left_number - right_number) / scale <= NUMERIC_TOLERANCE
+
+
+MATCHERS = {
+    "choice": lambda prediction, target: normalize_choice(prediction) == normalize_choice(target),
+    "text": match_text,
+}
 
 
 def zeroed_series(series: list[list[float]]) -> list[list[float]]:
@@ -63,7 +93,14 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--max-new-tokens", type=int, default=32)
+    parser.add_argument(
+        "--match",
+        choices=sorted(MATCHERS),
+        default="choice",
+        help="'choice' for the A-D reasoning tasks, 'text' for alignment answers",
+    )
     args = parser.parse_args()
+    matches = MATCHERS[args.match]
 
     examples = list(iter_jsonl([args.data_dir / f"{args.task}.jsonl"]))
     if args.limit:
@@ -79,17 +116,17 @@ def main() -> None:
     flips = {condition: 0 for condition in CONDITIONS if condition != "original"}
     with output.open("w", encoding="utf-8") as handle:
         for index, variants in enumerate(build_variants(examples)):
-            gold = normalize_choice(examples[index].get("answer"))
+            gold = examples[index].get("answer")
             predictions = {}
             for condition in CONDITIONS:
                 text, _ = predict(
                     tokenizer, model, config, variants[condition], "full", args.max_new_tokens
                 )
                 predictions[condition] = text
-                hits[condition] += normalize_choice(text) == gold
+                hits[condition] += matches(text, gold)
             for condition in flips:
-                flips[condition] += normalize_choice(predictions[condition]) != normalize_choice(
-                    predictions["original"]
+                flips[condition] += not matches(
+                    predictions[condition], predictions["original"]
                 )
             handle.write(
                 json.dumps(

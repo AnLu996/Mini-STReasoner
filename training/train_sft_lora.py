@@ -33,6 +33,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=0, help="0 processes every record")
     parser.add_argument("--log-every", type=int, default=10)
     parser.add_argument("--no-qlora", action="store_true")
+    parser.add_argument(
+        "--init-from",
+        type=Path,
+        help="continue from a previous checkpoint (its LoRA adapter, encoder and "
+        "projector), as the reference pipeline chains alignment into reasoning",
+    )
     return parser.parse_args()
 
 
@@ -58,17 +64,24 @@ def load_model(args: argparse.Namespace):
         llm.gradient_checkpointing_enable()
         llm.enable_input_require_grads()
     llm.config.use_cache = False
-    llm = get_peft_model(
-        llm,
-        LoraConfig(
-            r=8,
-            lora_alpha=16,
-            lora_dropout=0.05,
-            bias="none",
-            task_type="CAUSAL_LM",
-            target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
-        ),
-    )
+    if args.init_from:
+        from peft import PeftModel
+
+        llm = PeftModel.from_pretrained(
+            llm, args.init_from / "lora_adapter", is_trainable=True
+        )
+    else:
+        llm = get_peft_model(
+            llm,
+            LoraConfig(
+                r=8,
+                lora_alpha=16,
+                lora_dropout=0.05,
+                bias="none",
+                task_type="CAUSAL_LM",
+                target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+            ),
+        )
     model = MiniSTReasoner(
         llm,
         input_dim=args.input_dim,
@@ -76,6 +89,13 @@ def load_model(args: argparse.Namespace):
         temporal_dim=args.temporal_dim,
         num_temporal_tokens=args.num_temporal_tokens,
     )
+    if args.init_from:
+        model.time_series_encoder.load_state_dict(
+            torch.load(args.init_from / "ts_encoder.pt", map_location="cpu")
+        )
+        model.temporal_projector.load_state_dict(
+            torch.load(args.init_from / "temporal_projector.pt", map_location="cpu")
+        )
     model.time_series_encoder.to(model.input_device)
     model.temporal_projector.to(model.input_device)
     return tokenizer, model

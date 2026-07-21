@@ -18,3 +18,4 @@ data/stbench_small/
 Visualization/ecgqa_viz_data.js
 Visualization/ecgqa_viz_data.json
 .venv
+figures/*.pdf

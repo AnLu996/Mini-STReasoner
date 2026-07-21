@@ -196,6 +196,7 @@ def load_model(args: argparse.Namespace, device: str):
         temporal_dim=args.temporal_dim,
         num_temporal_tokens=args.num_temporal_tokens,
         temporal_num_layers=args.temporal_num_layers,
+        query_init_std=args.query_init_std,
         match_embedding_scale=args.match_embedding_scale,
     )
     model.time_series_encoder.to(model.input_device)
@@ -217,6 +218,7 @@ def save_checkpoint(args: argparse.Namespace, tokenizer, model: MiniSTReasoner, 
         "temporal_dim": args.temporal_dim,
         "num_temporal_tokens": args.num_temporal_tokens,
         "temporal_num_layers": args.temporal_num_layers,
+        "query_init_std": args.query_init_std,
         "match_embedding_scale": args.match_embedding_scale,
         "max_seq_length": args.max_seq_len,
         "qlora": qlora,
@@ -312,6 +314,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num_temporal_tokens", type=int, default=4)
     parser.add_argument("--temporal_hidden_dim", type=int, default=128)
     parser.add_argument("--temporal_dim", type=int, default=256)
+    parser.add_argument("--query_init_std", type=float, default=0.02,
+                        help="escala de init de las consultas de atencion temporal; "
+                             "0.02 deja el softmax en uniforme, 1.0 iguala la norma de las claves")
     parser.add_argument("--temporal_num_layers", type=int, default=1,
                         help="capas del GRU; con 1 el dropout declarado queda inerte")
     parser.add_argument("--match_embedding_scale", action="store_true",

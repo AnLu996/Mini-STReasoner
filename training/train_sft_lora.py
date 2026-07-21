@@ -39,6 +39,7 @@ def parse_args() -> argparse.Namespace:
         help="continue from a previous checkpoint (its LoRA adapter, encoder and "
         "projector), as the reference pipeline chains alignment into reasoning",
     )
+    parser.add_argument("--query-init-std", type=float, default=0.02)
     parser.add_argument(
         "--match-embedding-scale",
         action="store_true",
@@ -94,6 +95,7 @@ def load_model(args: argparse.Namespace):
         temporal_hidden_dim=args.temporal_hidden_dim,
         temporal_dim=args.temporal_dim,
         num_temporal_tokens=args.num_temporal_tokens,
+        query_init_std=args.query_init_std,
         match_embedding_scale=args.match_embedding_scale,
     )
     if args.init_from:
@@ -122,6 +124,7 @@ def save_checkpoint(args: argparse.Namespace, tokenizer, model: MiniSTReasoner) 
         "num_temporal_tokens": args.num_temporal_tokens,
         "max_seq_length": args.max_seq_length,
         "qlora": not args.no_qlora,
+        "query_init_std": args.query_init_std,
         "match_embedding_scale": args.match_embedding_scale,
     }
     (args.output_dir / "config.json").write_text(json.dumps(config, indent=2) + "\n")

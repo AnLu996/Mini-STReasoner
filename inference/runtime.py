@@ -53,6 +53,7 @@ def load_checkpoint(model_path: str | Path, quantized: bool = True, device: str 
         temporal_dim=config["temporal_dim"],
         num_temporal_tokens=config["num_temporal_tokens"],
         temporal_num_layers=config.get("temporal_num_layers", 1),
+        query_init_std=config.get("query_init_std", 0.02),
         match_embedding_scale=config.get("match_embedding_scale", False),
     )
     device = model.input_device

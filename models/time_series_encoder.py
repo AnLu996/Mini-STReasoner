@@ -15,6 +15,7 @@ class TimeSeriesEncoder(nn.Module):
         num_temporal_tokens: int = 4,
         num_layers: int = 1,
         dropout: float = 0.1,
+        query_init_std: float = 0.02,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
@@ -29,7 +30,16 @@ class TimeSeriesEncoder(nn.Module):
             dropout=dropout if num_layers > 1 else 0.0,
         )
         self.output_projection = nn.Linear(hidden_dim * 2, temporal_dim)
-        self.token_queries = nn.Parameter(torch.randn(num_temporal_tokens, temporal_dim) * 0.02)
+        # The queries are dotted against LayerNormed encoder outputs, whose norm is
+        # sqrt(temporal_dim) (~16 for 256). Initialising them at 0.02 makes them ~50x
+        # smaller, so after the sqrt(d) division the logits span ~0.2 while a softmax
+        # over T steps needs a span of order log(T) (~6.9 for T=1000) to depart from
+        # uniform. The pooling then degenerates into a plain temporal mean — and
+        # gradients barely escape it, because a uniform softmax is a flat region.
+        # ``query_init_std=1.0`` puts the queries on the same scale as the keys.
+        self.token_queries = nn.Parameter(
+            torch.randn(num_temporal_tokens, temporal_dim) * query_init_std
+        )
         self.norm = nn.LayerNorm(temporal_dim)
 
     def _canonicalize(self, time_series: torch.Tensor) -> torch.Tensor:

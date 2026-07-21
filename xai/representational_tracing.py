@@ -441,7 +441,7 @@ def _build_latent(orig: dict[str, Any], ecgcf: dict[str, Any], textcf: dict[str,
 
 def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
                seed: int, max_new_tokens: int, ecg_segments: int,
-               output_only: bool) -> dict[str, Any]:
+               output_only: bool, ecg_transform: str = "ecg_cf_time_mask") -> dict[str, Any]:
     """Traza un caso completo sobre las 5 condiciones y devuelve su registro."""
     from counterfactual.transformations_ecg import apply_ecg_transform, mask_time
     from counterfactual.transformations_text import apply_text_transform
@@ -458,8 +458,12 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
     q_conflict, _ = apply_text_transform(
         question, "conflict_question_normal_ecg_abnormal", attribute_type=attribute_type, seed=seed
     )
+    # La intervencion por defecto es la oclusion temporal, no el ruido gaussiano:
+    # el pooling atencional del encoder promedia el ruido de media cero y lo
+    # cancela, de modo que medir con el subestima el impacto del ECG por
+    # construccion (seccion 9 de RESULTADOS_CORRIDA_A.txt).
     signal_ecgcf = np.asarray(
-        apply_ecg_transform([signal.tolist()], "ecg_cf_noise", seed=seed)[0], dtype=np.float32
+        apply_ecg_transform([signal.tolist()], ecg_transform, seed=seed)[0], dtype=np.float32
     )
 
     def gen(q: str, sig: np.ndarray, use_series: bool = True) -> str:
@@ -645,6 +649,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_samples", type=int, default=30)
     parser.add_argument("--metric", choices=["cosine", "l2"], default="cosine")
     parser.add_argument("--max_new_tokens", type=int, default=32)
+    parser.add_argument(
+        "--ecg_transform",
+        default="ecg_cf_time_mask",
+        choices=["ecg_cf_time_mask", "ecg_cf_lead_mask", "ecg_cf_noise", "ecg_cf_spike",
+                 "ecg_cf_scaling", "ecg_cf_shuffle"],
+        help="intervencion de ECG del escenario ecg_cf; el ruido gaussiano se "
+             "cancela en el pooling del encoder y subestima el impacto",
+    )
     parser.add_argument("--ecg_segments", type=int, default=6,
                         help="Intervenciones de segmento ECG por caso para V4 (0 = desactivar)")
     parser.add_argument("--output_only", action="store_true",
@@ -703,6 +715,7 @@ def main() -> None:
                 model, tokenizer, config, row, metric_fn,
                 seed=args.seed, max_new_tokens=args.max_new_tokens,
                 ecg_segments=args.ecg_segments, output_only=args.output_only,
+                ecg_transform=args.ecg_transform,
             )
             case["metric"] = args.metric
             # Fusionar pesos de relevancia para V4 (texto y serie temporal).

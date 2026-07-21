@@ -1,0 +1,279 @@
+================================================================================
+ETAPA DE ALINEACION (ST-Align) Y LOCALIZACION DEL CUELLO DE BOTELLA
+Mini-STReasoner · Qwen3-0.6B + encoder GRU + QLoRA · RTX 4050 Laptop 6 GB
+================================================================================
+
+Generado: 2026-07-21
+Artefactos:  outputs/stbench_align/
+Checkpoint:  checkpoints/stbench_stage1_align/
+Datos:       data/stbench_small/align_train · align_test
+Antecedente: RESULTADOS_STBENCH_VALIDACION.txt
+
+PREGUNTA QUE MOTIVA ESTA CORRIDA
+  La validacion sobre ST-Bench (documento anterior) mostro que el modelo alcanza
+  la accuracy del paper sin usar la serie temporal, y salteo la ETAPA DE
+  ALINEACION que el paper entrena antes del razonamiento. Hipotesis razonable:
+  quiza sea justamente la alineacion la que hace que los tokens temporales
+  pesen en la decision, y su ausencia explique el resultado.
+
+  Esta corrida entrena esa etapa y la somete a la misma prueba.
+
+  >>> RESPUESTA CORTA: no. La alineacion no hace que el modelo lea la senal. Y
+  >>> la seccion 5 localiza por que, en un desajuste de escala concreto y
+  >>> corregible del proyector.
+
+
+================================================================================
+1. POR QUE ST-Align ES LA PRUEBA ADECUADA
+================================================================================
+
+  A diferencia de las tareas de razonamiento, que son de opcion multiple, la
+  alineacion pregunta propiedades de la senal cuya respuesta no esta en el
+  enunciado: amplitud, frecuencia y fase sinusoidales de un nodo en una ventana
+  temporal, o su patron de evolucion. Las respuestas son numeros o etiquetas
+  ("0.2618", "mean_reverting"), no letras A-D.
+
+  Composicion del subconjunto de test (300 muestras, muestreo por reservorio,
+  semilla 42, sin solapamiento de series con el conjunto de entrenamiento):
+
+    tipo de pregunta            n     ¿exige leer la senal?
+    otro                      151     parcialmente
+    grafo/ruta                 72     NO (la estructura del grafo esta en el texto)
+    sinusoidal_amplitud        27     SI
+    sinusoidal_frecuencia      25     SI
+    sinusoidal_fase            17     SI
+    patron_evolucion            8     SI
+
+  Observacion lateral pero relevante para el articulo: casi una cuarta parte del
+  propio conjunto de ALINEACION consiste en preguntas sobre la estructura del
+  grafo, que esta escrita literalmente en el prompt. El benchmark disenado para
+  ensenar al modelo a leer la senal contiene un 24% de preguntas que se
+  responden sin ella.
+
+
+================================================================================
+2. ENTRENAMIENTO DE LA ETAPA 1
+================================================================================
+
+  Datos            3.000 muestras de ST-Align/alignment_train.jsonl
+  Epocas           2 (750 pasos de optimizacion, 6.000 micro-pasos)
+  Resto            identico a la corrida de validacion (Qwen3-0.6B, QLoRA NF4,
+                   LoRA r=8 sobre atencion, encoder GRU 128->256, 4 tokens
+                   temporales, lr 2e-4, batch 1, acumulacion 8, seq 512)
+
+  Perdida media por epoca:   epoca 1  0,8806   ->   epoca 2  0,5020
+
+  El entrenamiento converge sin inestabilidad. (Esta corrida ya usa el promedio
+  por epoca incorporado tras la corrida anterior; la perdida de un solo
+  micro-lote no era interpretable.)
+
+
+================================================================================
+3. DESEMPENO SOBRE ALINEACION (test, n=300)
+================================================================================
+
+  Comparacion con tolerancia relativa del 1% para respuestas numericas e
+  igualdad de cadena normalizada para el resto.
+
+    tipo de pregunta            n      acc    respuestas distintas    moda
+    otro                      151    0,715                     10    'no' x63
+    grafo/ruta                 72    0,958                      2    'no' x38
+    sinusoidal_amplitud        27    0,000                      5    '15' x12
+    sinusoidal_frecuencia      25    0,280                      4    '0.2618' x19
+    sinusoidal_fase            17    0,000                      3    '-1.45' x13
+    patron_evolucion            8    0,875                      1    'mean_reverting' x8
+    ------------------------------------------------------------------------
+    GLOBAL                    300    0,637
+
+    Preguntas que EXIGEN leer la senal    n=77    acc = 0,182
+    Preguntas respondibles desde el TEXTO n=72    acc = 0,958
+
+  LECTURA. El 0,637 global no describe un modelo que lee series: describe un
+  modelo que aprendio una MODA POR TIPO DE PREGUNTA. La columna de respuestas
+  distintas es la evidencia directa: para amplitud emite 5 valores distintos en
+  27 muestras, para fase 3 en 17, y para patron de evolucion emite
+  'mean_reverting' en las 8. El 0,875 de patron_evolucion se obtiene con una
+  respuesta CONSTANTE, porque esa es la etiqueta mas frecuente.
+
+  Los aciertos se concentran donde la respuesta esta en el texto (grafo/ruta:
+  0,958) o donde una etiqueta domina la distribucion.
+
+
+================================================================================
+4. INTERVENCION SOBRE EL CONTENIDO DE LA SERIE (n=60)
+================================================================================
+
+  Mismo protocolo que la seccion 7 del documento anterior: se mantienen los
+  cuatro tokens temporales y se sustituye lo que codifican.
+
+    condicion    accuracy    tasa de cambio de respuesta
+    original       0,6333                              -
+    swapped        0,6333                         0,0000
+    zeroed         0,6333                         0,0000
+
+  Cero cambios en 60 muestras, en la tarea disenada especificamente para forzar
+  la lectura de la senal, y con un modelo entrenado especificamente en ella.
+
+  Junto con la seccion 3 esto cierra la pregunta que motivo la corrida: la etapa
+  de alineacion NO hace que los tokens temporales intervengan en la respuesta.
+
+
+================================================================================
+5. DONDE SE PIERDE LA INFORMACION
+================================================================================
+
+5.1 PROBE LINEAL SOBRE LAS REPRESENTACIONES (scripts/encoder_fidelity_probe.py)
+
+  Responde con un numero la pregunta planteada en la revision de tesis: ¿como
+  sabemos que el encoder refleja la serie de entrada? Se ajusta una regresion
+  ridge con validacion cruzada de 5 pliegues desde cada representacion hacia
+  estadisticos simples de la serie. R2 sobre 300 muestras:
+
+    objetivo         entrenado           entrenado        sin entrenar   sin entrenar
+                      encoder            proyector           encoder      proyector
+    mean               0,5511              0,5570              0,3847        0,2067
+    std                0,4263              0,4356              0,4025        0,1915
+    range              0,5133              0,5065              0,3397        0,2330
+    length             0,3601              0,4690              0,5648        0,6435
+    num_variables      0,9412              0,9254              0,9221        0,9212
+
+  TRES LECTURAS
+
+  a) El proyector NO pierde la informacion. El R2 es practicamente identico
+     antes y despues de proyectar (0,551 -> 0,557; 0,426 -> 0,436; 0,513 ->
+     0,507). Lo que el encoder conserva, el proyector lo transmite.
+
+  b) El encoder conserva poco. Con R2 entre 0,43 y 0,55 se pierde cerca de la
+     mitad de la varianza de estadisticos ELEMENTALES. Si la media y la
+     desviacion de la serie completa solo se recuperan a medias, la amplitud
+     sinusoidal de un nodo concreto en una ventana concreta no es recuperable.
+     Es coherente con la compresion de hasta 480 pasos x 10 variables en 4
+     tokens.
+
+  c) El entrenamiento aporta poco al encoder. Frente a un modelo sin entrenar la
+     mejora es modesta (mean 0,38 -> 0,55; range 0,34 -> 0,51) y para std es
+     practicamente nula (0,40 -> 0,43). En length el modelo entrenado es PEOR
+     que el no entrenado (0,56 -> 0,36). num_variables se recupera con R2 0,92
+     incluso sin entrenar, porque el relleno con ceros lo hace trivial.
+
+5.2 DESAJUSTE DE ESCALA ENTRE MODALIDADES
+
+  TemporalProjector termina en nn.LayerNorm(1024) (models/temporal_projector.py).
+  Una salida de LayerNorm con ganancia cercana a 1 tiene norma sqrt(1024) = 32.
+  Medido sobre el checkpoint: ganancia media 0,9978 (desviacion 0,0038), es
+  decir, practicamente sin moverse de su inicializacion.
+
+    norma media por token, embeddings temporales (medido, n=40)   32,17
+    norma media por token, embeddings de texto de Qwen3-0.6B       0,93
+    razon temporal / texto                                        36,58
+
+  Los cuatro tokens temporales entran al LLM con una norma unas 35 VECES MAYOR
+  que cualquier token de texto. Siendo 4 de unos 319 tokens, aportan cerca del
+  32% de la norma total de la secuencia.
+
+  Esto explica de forma unificada las dos observaciones que hasta ahora parecian
+  independientes:
+
+    - Por que no_series colapsa el FORMATO (seccion 6 del documento anterior):
+      los tokens temporales son un prefijo enorme y casi constante; el modelo
+      condiciona el formato de salida a su presencia, de modo que retirarlos lo
+      devuelve al comportamiento del Qwen3 base.
+
+    - Por que sustituir el CONTENIDO no cambia nada (seccion 4): la LayerNorm
+      fija la norma en 32 sea cual sea la entrada, de modo que la magnitud de la
+      serie se normaliza y solo varia la direccion, y esa variacion es del 1-6%
+      (medida en el documento anterior). Una perturbacion direccional del 1-6%
+      sobre un vector fuera de escala por un factor 35 no compite con 315 tokens
+      de texto correctamente escalados.
+
+  En otras palabras: los tokens temporales funcionan como un PROMPT APRENDIDO
+  casi constante, no como un canal de informacion.
+
+  HIPOTESIS CORREGIBLE, AUN NO PROBADA. Ajustar la escala de salida del proyector
+  a la del espacio de embeddings del LLM -inicializando la ganancia de la
+  LayerNorm en torno a 0,03, o normalizando a la norma empirica de los
+  embeddings de entrada- es una intervencion de una linea. NO se ha verificado
+  que corrija el comportamiento; lo que si esta establecido es que la escala
+  actual esta fuera de rango por mas de un orden de magnitud, y que ninguna
+  presion de gradiente la corrigio durante el entrenamiento.
+
+
+================================================================================
+6. QUE CAMBIA Y QUE NO RESPECTO AL DOCUMENTO ANTERIOR
+================================================================================
+
+  SE CONFIRMA
+    - La respuesta del modelo no depende del contenido de la serie. Ahora
+      tambien sobre la tarea de alineacion y con un modelo entrenado en ella:
+      0 cambios en 60 muestras.
+    - La dominancia textual no es un artefacto de la adaptacion a ECG-QA.
+
+  SE DESCARTA
+    - Que la ausencia de la etapa de alineacion explicara el resultado anterior.
+      No lo explica.
+
+  SE CORRIGE
+    - En el documento anterior se atribuyo la atenuacion al proyector, a partir
+      del desplazamiento relativo (9-63% en el encoder frente a 1-6% tras
+      proyectar). El probe lineal muestra que esa lectura era incompleta: el
+      proyector NO destruye la informacion (mismo R2 antes y despues), sino que
+      comprime el RANGO DINAMICO por efecto de la LayerNorm. La perdida de
+      informacion ocurre antes, en la compresion del encoder; la perdida de
+      INFLUENCIA ocurre en la escala.
+
+  SE ANADE
+    - Una cifra de fidelidad del encoder, que es la pregunta abierta de la
+      revision de tesis (seccion 5.1).
+    - Un mecanismo concreto y corregible (seccion 5.2), que convierte el
+      diagnostico de "el cuello de botella es arquitectonico" en una hipotesis
+      puntual y testeable.
+
+
+================================================================================
+7. LO QUE NO SE PROBO
+================================================================================
+
+  1. La etapa 2 encadenada (razonamiento a partir del checkpoint de alineacion).
+     train_sft_lora.py ya acepta --init-from y quedo verificado, pero dado que
+     la etapa 1 no produce sensibilidad a la senal, la etapa 2 solo puede
+     heredar esa insensibilidad. Cuesta alrededor de una hora si se quiere el
+     ciclo completo del paper documentado.
+  2. La correccion de escala del proyector (seccion 5.2). Es el experimento de
+     mayor valor pendiente: una linea de cambio y una corrida de etapa 1 para
+     comprobar si la tasa de cambio deja de ser cero.
+  3. Encoder ampliado (32 tokens, 2 capas, hidden 256), la corrida B prevista
+     para ECG-QA. El probe de la seccion 5.1 predice que subiria el R2 del
+     encoder, pero por si solo no arreglaria el desajuste de escala.
+  4. Mas alineacion. Se entrenaron 2 epocas sobre 3.000 muestras de un universo
+     mucho mayor; no se descarta que un regimen mas largo cambie el resultado,
+     aunque la seccion 5.2 sugiere que el limite no es de datos.
+
+  NOTA SOBRE EL EVALUADOR DEL PAPER. No se reprodujo
+  evaluation/evaluate_alignment_predictions del repositorio original porque
+  contiene un defecto: cuando el objetivo numerico es distinto de cero calcula
+  el error relativo pero nunca lo acumula (solo el caso cercano a cero suma
+  puntaje), de modo que su overall_score queda deflactado. El repositorio no
+  publica metricas de alineacion, asi que no habia cifra contra la cual validar.
+
+
+================================================================================
+8. INVENTARIO DE ARTEFACTOS
+================================================================================
+
+outputs/stbench_align/
+  train_stage1.log                             log de entrenamiento
+  predictions_alignment.jsonl                  300 predicciones de test
+  series_intervention_alignment.jsonl          60 casos x 3 condiciones
+  series_intervention_alignment_summary.json   accuracy y tasa de cambio
+  encoder_fidelity_stage1.json                 R2 de los probes lineales
+
+checkpoints/stbench_stage1_align/              checkpoint de la etapa 1
+data/stbench_small/align_train · align_test    3.000 / 300 muestras
+
+scripts/encoder_fidelity_probe.py              probes lineales por etapa
+scripts/stbench_series_intervention.py         --match text para alineacion
+training/train_sft_lora.py                     --init-from para encadenar etapas
+
+================================================================================
+FIN
+================================================================================

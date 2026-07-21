@@ -5,9 +5,8 @@ know the encoder reflects the input series at all?* Accuracy on the downstream
 task cannot answer it, because a model can score well without reading the signal.
 
 For each sample the script extracts two representations and fits a ridge probe
-from each to simple statistics of the input series (mean, standard deviation,
-range, length, number of variables). The comparison that matters is between
-stages:
+from each to descriptors of the input series. The comparison that matters is
+between stages:
 
     encoder    output of the GRU + attention pooling      [tokens x temporal_dim]
     projector  after projection into the LLM space        [tokens x hidden_size]
@@ -15,6 +14,13 @@ stages:
 A high R2 at the encoder and a low one at the projector localises the loss at the
 projection. A low R2 at both means the encoder itself discards the signal, which
 is an argument for a larger encoder rather than a better projection.
+
+Choosing the descriptors matters. ``TimeSeriesEncoder`` z-scores every variable
+before the GRU, so absolute scale is discarded *by design*: probing for the mean
+or the standard deviation measures the normalisation working, not a fidelity
+failure. The informative targets are the ones that survive standardisation —
+above all ``dominant_frequency``, which on an ECG is the heart rate, and which
+the model would need for any question about rhythm.
 
 An untrained model is probed alongside as a reference: a randomly initialised
 GRU already preserves a surprising amount, so a trained encoder that fails to
@@ -35,7 +41,12 @@ import torch
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from inference.runtime import build_inputs, load_base_model, load_checkpoint  # noqa: E402
+from inference.runtime import (  # noqa: E402
+    build_ecg_inputs,
+    build_inputs,
+    load_base_model,
+    load_checkpoint,
+)
 from training.dataset_loader import iter_jsonl  # noqa: E402
 
 
@@ -83,9 +94,34 @@ def series_statistics(series: list[list[float]]) -> dict[str, float]:
     }
 
 
+def load_examples(path: Path, data_format: str, limit: int) -> list[dict[str, Any]]:
+    """Return records carrying both the model input and the raw series.
+
+    ``stbench`` samples hold the series inline; ``ecgqa`` samples point at a
+    ``.npy`` file, which is loaded here so both paths expose ``series``.
+    """
+    rows = list(iter_jsonl([path]))[:limit]
+    if data_format == "stbench":
+        return [{**row, "series": row["time_series"]} for row in rows]
+    examples = []
+    for row in rows:
+        signal = np.load(row["ecg_signal_path"]).astype(np.float32)
+        examples.append(
+            {
+                "question": row.get("question", ""),
+                "ecg_signal": [signal.tolist()],
+                "series": signal.tolist(),
+            }
+        )
+    return examples
+
+
 @torch.no_grad()
-def representations(tokenizer, model, config, example: dict[str, Any]) -> dict[str, np.ndarray]:
-    _, _, series, time_mask = build_inputs(tokenizer, example, config["input_dim"])
+def representations(
+    tokenizer, model, config, example: dict[str, Any], data_format: str
+) -> dict[str, np.ndarray]:
+    build = build_inputs if data_format == "stbench" else build_ecg_inputs
+    _, _, series, time_mask = build(tokenizer, example, config["input_dim"])
     device = next(model.time_series_encoder.parameters()).device
     tokens, _ = model.time_series_encoder(series.to(device), time_mask.to(device))
     projected = model.temporal_projector(tokens)
@@ -116,10 +152,12 @@ def ridge_r2(features: np.ndarray, target: np.ndarray, folds: int, seed: int) ->
     return 1.0 - residual / total if total > 0 else float("nan")
 
 
-def collect(tokenizer, model, config, examples: list[dict[str, Any]]) -> dict[str, np.ndarray]:
+def collect(
+    tokenizer, model, config, examples: list[dict[str, Any]], data_format: str
+) -> dict[str, np.ndarray]:
     stages: dict[str, list[np.ndarray]] = {"encoder": [], "projector": []}
     for example in examples:
-        extracted = representations(tokenizer, model, config, example)
+        extracted = representations(tokenizer, model, config, example, data_format)
         for stage, vector in extracted.items():
             stages[stage].append(vector)
     return {stage: np.vstack(vectors) for stage, vectors in stages.items()}
@@ -128,7 +166,13 @@ def collect(tokenizer, model, config, examples: list[dict[str, Any]]) -> dict[st
 def main() -> None:
     parser = argparse.ArgumentParser(description="Linear probes on the temporal representations")
     parser.add_argument("--model-path", type=Path, required=True)
-    parser.add_argument("--data", type=Path, required=True, help="JSONL with time_series")
+    parser.add_argument("--data", type=Path, required=True, help="JSONL with the samples")
+    parser.add_argument(
+        "--data-format",
+        choices=["stbench", "ecgqa"],
+        default="stbench",
+        help="ecgqa loads the signal from ecg_signal_path instead of time_series",
+    )
     parser.add_argument("--limit", type=int, default=300)
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--seed", type=int, default=42)
@@ -138,18 +182,19 @@ def main() -> None:
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    examples = list(iter_jsonl([args.data]))[: args.limit]
+    examples = load_examples(args.data, args.data_format, args.limit)
     statistics = {
-        name: np.asarray([series_statistics(item["time_series"])[name] for item in examples])
+        name: np.asarray([series_statistics(item["series"])[name] for item in examples])
         for name in TARGETS
     }
 
     tokenizer, model, config = load_checkpoint(args.model_path)
-    trained = collect(tokenizer, model, config, examples)
+    trained = collect(tokenizer, model, config, examples, args.data_format)
 
     results: dict[str, Any] = {
         "model_path": str(args.model_path),
         "data": str(args.data),
+        "data_format": args.data_format,
         "n": len(examples),
         "dimensions": {stage: int(matrix.shape[1]) for stage, matrix in trained.items()},
         "r2": {"trained": {}, "untrained": {}},
@@ -169,7 +214,7 @@ def main() -> None:
             temporal_dim=config["temporal_dim"],
             num_temporal_tokens=config["num_temporal_tokens"],
         )
-        untrained = collect(base_tokenizer, base_model, base_config, examples)
+        untrained = collect(base_tokenizer, base_model, base_config, examples, args.data_format)
         for stage, matrix in untrained.items():
             results["r2"]["untrained"][stage] = {
                 name: ridge_r2(matrix, statistics[name], args.folds, args.seed)

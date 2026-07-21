@@ -24,6 +24,7 @@ class MiniSTReasoner(nn.Module):
         temporal_hidden_dim: int = 128,
         temporal_dim: int = 256,
         num_temporal_tokens: int = 4,
+        temporal_num_layers: int = 1,
         match_embedding_scale: bool = False,
     ) -> None:
         super().__init__()
@@ -34,6 +35,7 @@ class MiniSTReasoner(nn.Module):
             hidden_dim=temporal_hidden_dim,
             temporal_dim=temporal_dim,
             num_temporal_tokens=num_temporal_tokens,
+            num_layers=temporal_num_layers,
         )
         output_scale = (
             self.embedding_norm(llm) / hidden_size**0.5 if match_embedding_scale else None

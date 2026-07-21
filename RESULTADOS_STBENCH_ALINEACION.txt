@@ -18,9 +18,10 @@ PREGUNTA QUE MOTIVA ESTA CORRIDA
 
   Esta corrida entrena esa etapa y la somete a la misma prueba.
 
-  >>> RESPUESTA CORTA: no. La alineacion no hace que el modelo lea la senal. Y
-  >>> la seccion 5 localiza por que, en un desajuste de escala concreto y
-  >>> corregible del proyector.
+  >>> RESPUESTA CORTA: no. La alineacion no hace que el modelo lea la senal.
+  >>> La seccion 5 localiza dos causas y la seccion 6 pone a prueba la segunda:
+  >>> corregir la escala del proyector es necesario pero no suficiente, porque
+  >>> el bloqueo dominante es que el encoder no representa lo que se pregunta.
 
 
 ================================================================================
@@ -127,34 +128,55 @@ PREGUNTA QUE MOTIVA ESTA CORRIDA
   Responde con un numero la pregunta planteada en la revision de tesis: ¿como
   sabemos que el encoder refleja la serie de entrada? Se ajusta una regresion
   ridge con validacion cruzada de 5 pliegues desde cada representacion hacia
-  estadisticos simples de la serie. R2 sobre 300 muestras:
+  descriptores de la serie. R2 sobre 300 muestras.
 
-    objetivo         entrenado           entrenado        sin entrenar   sin entrenar
-                      encoder            proyector           encoder      proyector
-    mean               0,5511              0,5570              0,3847        0,2067
-    std                0,4263              0,4356              0,4025        0,1915
-    range              0,5133              0,5065              0,3397        0,2330
-    length             0,3601              0,4690              0,5648        0,6435
-    num_variables      0,9412              0,9254              0,9221        0,9212
+  ELECCION DE LOS OBJETIVOS. TimeSeriesEncoder aplica z-score POR VARIABLE antes
+  del GRU (models/time_series_encoder.py, lineas 61-67). La escala absoluta se
+  descarta por diseno, de modo que probar por media o desviacion mide la
+  normalizacion funcionando y no la fidelidad del encoder. Los objetivos
+  informativos son los que sobreviven a la estandarizacion.
+
+    objetivo                  entrenado    entrenado   sin entrenar  sin entrenar
+                                encoder    proyector        encoder     proyector
+    -- escala (el z-score la elimina)
+    mean                         0,5511       0,5570         0,5129        0,4337
+    std                          0,4263       0,4356         0,2437        0,2665
+    range                        0,5133       0,5065         0,3178        0,3950
+    -- forma (sobrevive al z-score)
+    dominant_frequency           0,0567      -0,0202        -0,0787       -0,1377
+    autocorrelation_lag1         0,8901       0,8727         0,8697        0,7979
+    trend_slope                 -0,4830      -0,3515        -0,3522       -0,3650
+    -- estructura
+    length                       0,3601       0,4690         0,1969        0,4086
+    num_variables                0,9412       0,9254         0,8604        0,8323
 
   TRES LECTURAS
 
-  a) El proyector NO pierde la informacion. El R2 es practicamente identico
-     antes y despues de proyectar (0,551 -> 0,557; 0,426 -> 0,436; 0,513 ->
-     0,507). Lo que el encoder conserva, el proyector lo transmite.
+  a) El proyector NO pierde informacion. El R2 es practicamente identico antes y
+     despues de proyectar. Lo que el encoder conserva, el proyector lo transmite.
 
-  b) El encoder conserva poco. Con R2 entre 0,43 y 0,55 se pierde cerca de la
-     mitad de la varianza de estadisticos ELEMENTALES. Si la media y la
-     desviacion de la serie completa solo se recuperan a medias, la amplitud
-     sinusoidal de un nodo concreto en una ventana concreta no es recuperable.
-     Es coherente con la compresion de hasta 480 pasos x 10 variables en 4
-     tokens.
+  b) El encoder no representa el contenido frecuencial. R2 = 0,057 para la
+     frecuencia dominante, que es exactamente lo que preguntan los items
+     sinusoidales. La pendiente de tendencia da R2 negativo, es decir, peor que
+     predecir la media. Lo unico que si transmite bien es la autocorrelacion
+     (0,890), o sea la suavidad de la serie.
 
-  c) El entrenamiento aporta poco al encoder. Frente a un modelo sin entrenar la
-     mejora es modesta (mean 0,38 -> 0,55; range 0,34 -> 0,51) y para std es
-     practicamente nula (0,40 -> 0,43). En length el modelo entrenado es PEOR
-     que el no entrenado (0,56 -> 0,36). num_variables se recupera con R2 0,92
-     incluso sin entrenar, porque el relleno con ceros lo hace trivial.
+  c) El entrenamiento casi no aporta. En autocorrelacion, lo unico que el
+     encoder codifica bien, un GRU SIN ENTRENAR ya alcanza 0,870 frente a 0,890
+     del entrenado. num_variables se recupera con R2 0,86 sin entrenar porque el
+     relleno con ceros lo hace trivial.
+
+  CONSECUENCIA DIRECTA SOBRE LA SECCION 3. La amplitud sinusoidal es una
+  propiedad de ESCALA: el z-score por variable la elimina antes de que el GRU la
+  vea. El 0,000 de sinusoidal_amplitud no es un modelo que falla, es una
+  cantidad matematicamente irrecuperable desde esta representacion. La
+  frecuencia y la fase son propiedades de forma y si podrian sobrevivir, pero el
+  R2 de 0,057 muestra que el encoder tampoco las codifica.
+
+  (Esto se relaciona con el defecto 10 de RESULTADOS_CORRIDA_A.txt, donde se
+  senalo que el z-score se aplica dos veces en el camino de ECG-QA. Alli se
+  registro como redundancia; aqui se ve que ademas tiene una consecuencia
+  semantica: elimina la clase de propiedades por las que pregunta la tarea.)
 
 5.2 DESAJUSTE DE ESCALA ENTRE MODALIDADES
 
@@ -189,17 +211,113 @@ PREGUNTA QUE MOTIVA ESTA CORRIDA
   En otras palabras: los tokens temporales funcionan como un PROMPT APRENDIDO
   casi constante, no como un canal de informacion.
 
-  HIPOTESIS CORREGIBLE, AUN NO PROBADA. Ajustar la escala de salida del proyector
-  a la del espacio de embeddings del LLM -inicializando la ganancia de la
-  LayerNorm en torno a 0,03, o normalizando a la norma empirica de los
-  embeddings de entrada- es una intervencion de una linea. NO se ha verificado
-  que corrija el comportamiento; lo que si esta establecido es que la escala
-  actual esta fuera de rango por mas de un orden de magnitud, y que ninguna
-  presion de gradiente la corrigio durante el entrenamiento.
+  Esta hipotesis se puso a prueba. Resultado en la seccion 6.
 
 
 ================================================================================
-6. QUE CAMBIA Y QUE NO RESPECTO AL DOCUMENTO ANTERIOR
+6. PRUEBA DE LA CORRECCION DE ESCALA
+================================================================================
+
+  INTERVENCION. TemporalProjector acepta output_scale, que inicializa la
+  ganancia de su LayerNorm en norma_embeddings / sqrt(hidden) = 0,925 / 32 =
+  0,0289, de modo que los tokens temporales entran con la misma norma que los de
+  texto. La ganancia sigue siendo entrenable. Se activa con
+  --match-embedding-scale, queda registrada en config.json y los checkpoints
+  previos siguen cargando sin cambios.
+
+  Verificacion de la intervencion: norma de salida 0,9248 frente a la norma
+  objetivo de los embeddings de 0,9251.
+
+  Se reentreno la etapa 1 en condiciones identicas (mismos datos, semilla,
+  hiperparametros y numero de pasos) cambiando solo esa inicializacion.
+
+6.1 LO QUE MEJORA
+
+    perdida media de entrenamiento     epoca 1        epoca 2
+      escala original                   0,8806         0,5020
+      escala corregida                  0,7796         0,4093
+
+    accuracy sobre alineacion por tipo (test, n=300)
+      tipo                        n   original   corregida     delta
+      otro                      151      0,715       0,722    +0,007
+      grafo/ruta                 72      0,958       0,819    -0,139
+      sinusoidal_amplitud        27      0,000       0,037    +0,037
+      sinusoidal_frecuencia      25      0,280       0,560    +0,280
+      sinusoidal_fase            17      0,000       0,176    +0,176
+      patron_evolucion            8      0,875       0,875     0,000
+      -------------------------------------------------------------
+      GLOBAL                    300      0,637       0,643    +0,007
+
+      exigen leer la senal       77      0,182       0,325    +0,143
+      respondibles desde texto   72      0,958       0,819    -0,139
+
+  El ajuste mejora y el peso se REDISTRIBUYE entre modalidades: sube en las
+  preguntas de senal y baja en las de texto, dejando el global casi igual. Es
+  coherente con el diagnostico de la seccion 5.2: cuatro tokens que aportaban el
+  32% de la norma de la secuencia estaban distorsionando el procesamiento del
+  texto.
+
+6.2 LO QUE NO CAMBIA, QUE ES LO DECISIVO
+
+    Intervencion sobre el contenido de la serie, subconjunto de 77 preguntas que
+    EXIGEN leerla:
+
+      modelo                accuracy original   swapped   zeroed   cambio swap  cambio zero
+      escala original                  0,1818    0,1818   0,1818        0,0260       0,0260
+      escala corregida                 0,3247    0,3247   0,3247        0,0000       0,0130
+
+    Y sobre las 60 muestras mixtas:
+
+      escala original                  0,6333    0,6333   0,6333        0,0000       0,0000
+      escala corregida                 0,7500    0,7500   0,7500        0,0000       0,0000
+
+  La accuracy es IDENTICA hasta el ultimo decimal al sustituir la serie por la
+  de otra muestra o por ceros. Si el modelo estuviera leyendo la senal, la
+  condicion zeroed tendria que hundirse; no se mueve en absoluto. Las tasas de
+  cambio residuales del 1-3% corresponden a alternancias entre respuestas
+  igualmente incorrectas, por eso no alteran la accuracy.
+
+  La ganancia de 0,182 a 0,325 en las preguntas de senal NO proviene de leer la
+  serie sino de un ajuste mejor a la moda de cada tipo de pregunta. La columna
+  de respuestas distintas lo confirma: en sinusoidal_amplitud el modelo
+  corregido emite UNA sola respuesta distinta en 27 muestras (frente a 5 antes)
+  y aun asi sube de 0,000 a 0,037; en sinusoidal_frecuencia emite 5 distintas en
+  25 muestras y duplica su accuracy.
+
+6.3 PROBE SOBRE EL MODELO CORREGIDO
+
+    objetivo                  entrenado/encoder    entrenado/proyector
+    dominant_frequency                   0,1594                -0,6316
+    autocorrelation_lag1                 0,7855                 0,8510
+    trend_slope                         -0,0927                -0,0921
+    num_variables                        0,9388                 0,9293
+
+  La frecuencia dominante sube de 0,057 a 0,159 y sigue siendo inutilizable.
+  Reentrenar con la escala corregida no hace que el encoder aprenda a
+  representar el contenido frecuencial.
+
+6.4 CONCLUSION SOBRE LA HIPOTESIS DE ESCALA
+
+  El desajuste de escala era REAL y su correccion es NECESARIA -mejora el ajuste
+  y devuelve peso a la modalidad temporal- pero NO ES SUFICIENTE. No puede
+  serlo: corregir la magnitud con la que una representacion entra al LLM no
+  agrega informacion que la representacion no contiene.
+
+  Hay dos bloqueos independientes y el orden importa:
+
+    1. INFORMACION. El encoder no representa lo que la tarea pregunta. La
+       amplitud se elimina por el z-score; la frecuencia no se codifica
+       (R2 0,06-0,16). Es el bloqueo dominante.
+    2. INFLUENCIA. Aun si la informacion estuviera, entraba al LLM 35 veces
+       fuera de escala. Corregido.
+
+  El trabajo siguiente debe atacar el punto 1: mas tokens temporales, mas capas,
+  y sobre todo revisar si el z-score por variable debe conservar la escala como
+  caracteristica adicional en vez de descartarla.
+
+
+================================================================================
+7. QUE CAMBIA Y QUE NO RESPECTO AL DOCUMENTO ANTERIOR
 ================================================================================
 
   SE CONFIRMA
@@ -218,19 +336,23 @@ PREGUNTA QUE MOTIVA ESTA CORRIDA
       proyectar). El probe lineal muestra que esa lectura era incompleta: el
       proyector NO destruye la informacion (mismo R2 antes y despues), sino que
       comprime el RANGO DINAMICO por efecto de la LayerNorm. La perdida de
-      informacion ocurre antes, en la compresion del encoder; la perdida de
-      INFLUENCIA ocurre en la escala.
+      informacion ocurre antes, en el encoder; la perdida de INFLUENCIA ocurre
+      en la escala.
+    - Una version previa de este mismo documento probo la fidelidad del encoder
+      contra la media, la desviacion y el rango. Es un objetivo mal elegido: el
+      encoder z-scorea por variable, de modo que esas cantidades se descartan
+      por diseno. La tabla de la seccion 5.1 ya usa descriptores que sobreviven
+      a la estandarizacion.
 
   SE ANADE
     - Una cifra de fidelidad del encoder, que es la pregunta abierta de la
       revision de tesis (seccion 5.1).
-    - Un mecanismo concreto y corregible (seccion 5.2), que convierte el
-      diagnostico de "el cuello de botella es arquitectonico" en una hipotesis
-      puntual y testeable.
+    - La prueba de la correccion de escala (seccion 6): necesaria pero no
+      suficiente, con dos bloqueos separados e identificados.
 
 
 ================================================================================
-7. LO QUE NO SE PROBO
+8. LO QUE NO SE PROBO
 ================================================================================
 
   1. La etapa 2 encadenada (razonamiento a partir del checkpoint de alineacion).
@@ -238,12 +360,14 @@ PREGUNTA QUE MOTIVA ESTA CORRIDA
      la etapa 1 no produce sensibilidad a la senal, la etapa 2 solo puede
      heredar esa insensibilidad. Cuesta alrededor de una hora si se quiere el
      ciclo completo del paper documentado.
-  2. La correccion de escala del proyector (seccion 5.2). Es el experimento de
-     mayor valor pendiente: una linea de cambio y una corrida de etapa 1 para
-     comprobar si la tasa de cambio deja de ser cero.
-  3. Encoder ampliado (32 tokens, 2 capas, hidden 256), la corrida B prevista
-     para ECG-QA. El probe de la seccion 5.1 predice que subiria el R2 del
-     encoder, pero por si solo no arreglaria el desajuste de escala.
+  2. Encoder ampliado (32 tokens, 2 capas, hidden 256), la corrida B prevista
+     para ECG-QA. Tras la seccion 6 es el experimento de mayor valor pendiente,
+     y conviene correrlo YA con --match-embedding-scale activado, puesto que esa
+     correccion resulto necesaria aunque no suficiente.
+  3. Conservar la escala de la serie como caracteristica. El z-score por
+     variable elimina la amplitud, que es una de las cantidades preguntadas.
+     Anadir la media y la desviacion descartadas como entradas adicionales del
+     encoder es barato y ataca el bloqueo dominante.
   4. Mas alineacion. Se entrenaron 2 epocas sobre 3.000 muestras de un universo
      mucho mayor; no se descarta que un regimen mas largo cambie el resultado,
      aunque la seccion 5.2 sugiere que el limite no es de datos.
@@ -257,7 +381,7 @@ PREGUNTA QUE MOTIVA ESTA CORRIDA
 
 
 ================================================================================
-8. INVENTARIO DE ARTEFACTOS
+9. INVENTARIO DE ARTEFACTOS
 ================================================================================
 
 outputs/stbench_align/
@@ -266,8 +390,15 @@ outputs/stbench_align/
   series_intervention_alignment.jsonl          60 casos x 3 condiciones
   series_intervention_alignment_summary.json   accuracy y tasa de cambio
   encoder_fidelity_stage1.json                 R2 de los probes lineales
+  train_stage1_scaled.log                      etapa 1 con escala corregida
+  predictions_alignment_scaled.jsonl           300 predicciones, escala corregida
+  series_intervention_alignment_scaled.jsonl   60 casos x 3 condiciones
+  sigonly_stbench_stage1_align*.jsonl          77 preguntas que exigen la senal
+  encoder_fidelity_stage1_scaled.json          probes sobre el modelo corregido
 
 checkpoints/stbench_stage1_align/              checkpoint de la etapa 1
+checkpoints/stbench_stage1_align_scaled/       idem con escala corregida
+data/stbench_small/align_test_signal/          las 77 preguntas de senal
 data/stbench_small/align_train · align_test    3.000 / 300 muestras
 
 scripts/encoder_fidelity_probe.py              probes lineales por etapa

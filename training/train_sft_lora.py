@@ -116,8 +116,15 @@ def main() -> None:
     global_step = 0
     micro_step = 0
     for epoch in range(args.epochs):
+        # Averaged over every micro-batch: the loss of the last one is a single
+        # sample, and because the tasks are interleaved it is always drawn from
+        # the same task, so on its own it says nothing about convergence.
+        epoch_loss_sum = 0.0
+        epoch_batches = 0
         for batch in loader:
             output = model(**batch)
+            epoch_loss_sum += float(output.llm_output.loss.item())
+            epoch_batches += 1
             loss = output.llm_output.loss / args.gradient_accumulation_steps
             loss.backward()
             micro_step += 1
@@ -127,10 +134,21 @@ def main() -> None:
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
                 if global_step % args.log_every == 0:
+                    running = epoch_loss_sum / max(epoch_batches, 1)
                     value = loss.item() * args.gradient_accumulation_steps
-                    print(f"epoch={epoch + 1} step={global_step} loss={value:.4f}")
+                    print(
+                        f"epoch={epoch + 1} step={global_step} "
+                        f"loss={value:.4f} epoch_mean={running:.4f}",
+                        flush=True,
+                    )
                 if args.max_steps and global_step >= args.max_steps:
                     break
+        print(
+            f"[epoch] epoch={epoch + 1} "
+            f"train_loss={epoch_loss_sum / max(epoch_batches, 1):.4f} "
+            f"batches={epoch_batches}",
+            flush=True,
+        )
         if args.max_steps and global_step >= args.max_steps:
             break
     if micro_step % args.gradient_accumulation_steps:

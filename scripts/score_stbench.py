@@ -35,6 +35,8 @@ MULTIPLE_CHOICE_TASKS = (
 )
 FORECASTING_TASK = "reasoning_forecasting"
 
+CHOICES = frozenset("ABCD")
+
 # Accuracy of guessing uniformly among the four options.
 RANDOM_BASELINE = 0.25
 
@@ -108,7 +110,9 @@ def score_multiple_choice(rows: list[dict[str, Any]], task: str) -> dict[str, An
         correct += prediction == target
     total = len(rows)
     accuracy = correct / total if total else None
-    parsed = sum(count for choice, count in predicted_counts.items() if choice in "ABCD")
+    parsed = sum(
+        count for choice, count in predicted_counts.items() if choice in CHOICES
+    )
     return {
         "task": task,
         "metric": "accuracy",
@@ -183,12 +187,17 @@ def main() -> None:
     parser.add_argument(
         "--tasks", nargs="*", default=list(MULTIPLE_CHOICE_TASKS) + [FORECASTING_TASK]
     )
+    parser.add_argument(
+        "--prefix",
+        default="predictions",
+        help="file stem before the task name, e.g. baseline_predictions",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
 
     results: dict[str, Any] = {}
     for task in args.tasks:
-        path = args.predictions_dir / f"predictions_{task}.jsonl"
+        path = args.predictions_dir / f"{args.prefix}_{task}.jsonl"
         if path.exists():
             results[task] = score_task(path, task)
         else:

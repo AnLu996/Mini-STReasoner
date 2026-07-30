@@ -70,8 +70,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 EPS = 1e-8
 
 # Etapas en orden del flujo. ``text_flows`` indica si el texto atraviesa la etapa
-# (en encoder/projector solo circula el ECG, asi que impacto_texto = None ahi).
+# (en bigru/encoder/projector solo circula el ECG, asi que impacto_texto = None ahi).
+# ``bigru`` = salida GRU + LayerNorm, ANTES del pooling atencional (T'x256).
+# ``encoder`` = salida del pooling atencional (Kx256), post-pool. La separacion
+# permite distinguir H2 (pooling destructivo) de H3 (proyector destructivo).
 STAGES: tuple[tuple[str, bool], ...] = (
+    ("bigru", False),
     ("encoder", False),
     ("projector", False),
     ("fusion", True),
@@ -79,7 +83,8 @@ STAGES: tuple[tuple[str, bool], ...] = (
     ("output", True),
 )
 STAGE_LABELS = {
-    "encoder": "Encoder temporal",
+    "bigru": "Encoder GRU (pre-pool)",
+    "encoder": "Pooling atencional (post-BiGRU)",
     "projector": "Proyector latente",
     "fusion": "Fusion inputs_embeds",
     "llm": "LLM",
@@ -336,7 +341,11 @@ def _capture_activations(model, tokenizer, config, question: str, signal: np.nda
     captured: dict[str, Any] = {}
 
     def enc_hook(_module, _inp, out):
-        captured["encoder"] = out[0].detach().float().cpu().numpy()
+        # ``out`` is (temporal_tokens[h_pool], attention, bigru_output[h_bigru]).
+        # We capture both to enable H2 vs H3 attribution in the ledger downstream.
+        captured["encoder"] = out[0].detach().float().cpu().numpy()  # h_pool (post-pool)
+        if len(out) >= 3 and out[2] is not None:
+            captured["bigru"] = out[2].detach().float().cpu().numpy()  # h_bigru (pre-pool)
 
     def proj_hook(_module, _inp, out):
         captured["projector"] = out.detach().float().cpu().numpy()
@@ -365,7 +374,7 @@ def _capture_activations(model, tokenizer, config, question: str, signal: np.nda
     if "encoder" not in captured or "projector" not in captured:
         raise RuntimeError("No se capturaron las activaciones del encoder/proyector")
 
-    return {
+    result = {
         "encoder_vec": _pool_seq(captured["encoder"]),
         "projector_vec": _pool_seq(captured["projector"]),
         "projector_tokens": captured["projector"][0],   # [K, H] para V3
@@ -376,6 +385,13 @@ def _capture_activations(model, tokenizer, config, question: str, signal: np.nda
         "text_tokens": text_embeds[0],                  # [seq, H] para V3
         "input_ids": input_ids[0].tolist(),
     }
+    # ``bigru_vec`` is the pre-pool GRU trace pooled to a single vector for the
+    # ledger; the raw tensor is available in ``captured["bigru"]`` (shape [B,T',D])
+    # if a later stage of the audit needs per-timestep access. Guarded so old
+    # checkpoints without the new encoder output still run.
+    if "bigru" in captured:
+        result["bigru_vec"] = _pool_seq(captured["bigru"])
+    return result
 
 
 def _build_latent(orig: dict[str, Any], ecgcf: dict[str, Any], textcf: dict[str, Any],
@@ -514,6 +530,13 @@ def trace_case(model, tokenizer, config, row: dict[str, Any], metric_fn,
                     "delta_text_ecg": None if delta is None else round(float(delta), 4),
                 }
 
+            # ``bigru`` (pre-pool GRU output) is optional: absent if the encoder
+            # forward hasn't been updated to return it, in which case we fall back
+            # to ``None`` so downstream aggregators keep working.
+            if "bigru_vec" in act_orig and "bigru_vec" in act_ecgcf:
+                stages["bigru"] = stage_impacts("bigru_vec", text_flows=False)
+            else:
+                stages["bigru"] = {"impact_ecg": None, "impact_text": None, "delta_text_ecg": None}
             stages["encoder"] = stage_impacts("encoder_vec", text_flows=False)
             stages["projector"] = stage_impacts("projector_vec", text_flows=False)
             stages["fusion"] = stage_impacts("fusion_vec", text_flows=True)

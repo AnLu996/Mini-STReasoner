@@ -123,7 +123,7 @@ def representations(
     build = build_inputs if data_format == "stbench" else build_ecg_inputs
     _, _, series, time_mask = build(tokenizer, example, config["input_dim"])
     device = next(model.time_series_encoder.parameters()).device
-    tokens, _ = model.time_series_encoder(series.to(device), time_mask.to(device))
+    tokens, _, _ = model.time_series_encoder(series.to(device), time_mask.to(device))
     projected = model.temporal_projector(tokens)
     return {
         "encoder": tokens.float().cpu().numpy().reshape(-1),

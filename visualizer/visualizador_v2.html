@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auditoría contrafactual · dependencia textual y anclaje temporal en ECG-texto</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="ecgqa_viz_data.js" onerror="console.warn('ecgqa_viz_data.js no encontrado')"></script>
+<script src="tracing_data.js"   onerror="console.warn('tracing_data.js no encontrado')"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+:root{
+  --bg:#D7D3C8; --sidebar:#E7E3D9; --panel:#FBFAF5; --panel2:#EEEAE1;
+  --line:#CBC5B7; --line2:#DBD6CB;
+  --ink:#1c1a17; --txt:#222a32; --dim:#586470; --faint:#8a939e;
+  --text-mod:#bf7619; --ecg-mod:#10848d; --ecg-blue:#2f6db0;
+  --alert:#c2433a; --ok:#2f8b5b; --warn:#bd881c; --neutral:#8a8f97;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+  --sans:'IBM Plex Sans',system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);
+  font-family:var(--sans);font-size:12.5px;line-height:1.4;-webkit-font-smoothing:antialiased}
+body{display:grid;grid-template-columns:260px 1fr;height:100vh;overflow:hidden}
+h2,h3{margin:0}
+svg{display:block}
+button{font-family:inherit}
+
+/* ============ ÍNDICE LATERAL ============ */
+.sidebar{background:var(--sidebar);border-right:1px solid var(--line);
+  padding:12px 12px 10px;overflow-y:auto;display:flex;flex-direction:column;gap:11px}
+.brand .t1{font-weight:600;font-size:13.5px;line-height:1.25}
+.brand .t1 b{color:var(--text-mod)} .brand .t1 i{color:var(--ecg-mod);font-style:normal;font-weight:600}
+.brand .t2{font-family:var(--mono);font-size:9px;color:var(--faint);
+  margin-top:5px;letter-spacing:.2px;line-height:1.4}
+.audience{margin-top:4px;font-family:var(--mono);font-size:8.5px;color:var(--warn);
+  border:1px dashed var(--warn);border-radius:5px;padding:4px 6px;line-height:1.35}
+
+.filters{display:flex;flex-direction:column;gap:6px}
+.fl label{font-family:var(--mono);font-size:8.5px;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--faint);display:block;margin-bottom:2px}
+.fl select,.fl input{width:100%;background:var(--panel);color:var(--txt);
+  border:1px solid var(--line);border-radius:6px;padding:4px 6px;
+  font-family:var(--mono);font-size:10px}
+.fl select:focus,.fl input:focus{outline:none;border-color:var(--ecg-mod)}
+
+.ctab{background:var(--panel);border:1px solid var(--line);border-radius:8px;
+  max-height:none;flex:1;min-height:180px;overflow:auto}
+.ctab table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10px}
+.ctab th{position:sticky;top:0;background:var(--panel);text-align:left;
+  color:var(--faint);font-size:8px;text-transform:uppercase;letter-spacing:.4px;
+  padding:4px 5px;border-bottom:1px solid var(--line)}
+.ctab td{padding:3px 5px;border-bottom:1px solid var(--line2);cursor:pointer}
+.ctab td.dv{text-align:right;font-weight:600;color:var(--dim)}
+.ctab tr:hover td{background:var(--panel2)}
+.ctab tr.sel td{background:#d8ecee}
+.cls-pill{display:inline-block;padding:1px 5px;border-radius:4px;font-size:8.5px;
+  font-weight:600;letter-spacing:.3px}
+.cls-TEXT{background:#fbe1cf;color:#8a4a12}
+.cls-ECG {background:#d5e8f5;color:#1d4d77}
+.cls-BAL {background:#e6ecec;color:#3a5257}
+.cls-INS {background:#fbf1d8;color:#7a5c12}
+.cls-UNK {background:#eef0f2;color:#5a5f66}
+
+.idx-empty{color:var(--faint);text-align:center;padding:14px 8px;
+  font-family:var(--mono);font-size:9.5px;line-height:1.5}
+
+/* ============ MAIN LAYOUT ============ */
+main{display:grid;grid-template-rows:auto auto 1fr auto;min-height:0;overflow:hidden}
+
+/* ---- Flujo del modelo (siempre visible) ---- */
+.flow{background:var(--panel);border-bottom:1px solid var(--line);
+  padding:11px 14px 9px;display:flex;flex-direction:column;gap:6px}
+.flow-head{display:flex;align-items:center;gap:10px}
+.flow-title{font-family:var(--mono);font-size:9.5px;letter-spacing:.4px;
+  text-transform:uppercase;color:var(--faint)}
+.flow-hint{font-family:var(--mono);font-size:9px;color:var(--faint);margin-left:auto}
+.flow-hint b{color:var(--txt)}
+.flow-nodes{display:flex;align-items:center;gap:0;overflow:hidden}
+.fnode{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;
+  gap:3px;padding:8px 4px;border:1.5px solid var(--line);background:var(--panel2);
+  border-radius:9px;cursor:pointer;transition:background .12s,border-color .12s,transform .12s}
+.fnode:hover{border-color:var(--ecg-mod);background:#eef7f7}
+.fnode.on{background:#d8ecee;border-color:var(--ecg-mod);
+  box-shadow:0 2px 8px rgba(16,132,141,.18);transform:translateY(-1px)}
+.fnode.on .fn-lab{color:#0c5a61}
+.fnode .fn-lab{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--dim)}
+.fnode .fn-sub{font-family:var(--mono);font-size:8.5px;color:var(--faint);letter-spacing:.2px}
+.fnode.global{flex:0 0 96px;background:#fbf1d8;border-color:var(--warn)}
+.fnode.global.on{background:#f6e4b0;border-color:var(--warn);color:#7a5c12}
+.fnode.global .fn-lab{color:#7a5c12}
+.farrow{flex:0 0 14px;color:var(--faint);text-align:center;font-family:var(--mono)}
+
+/* ---- Base persistente (ECG + Pregunta + Respuesta) ---- */
+.base{background:var(--panel);border-bottom:1px solid var(--line);
+  padding:10px 14px;display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:11px;
+  min-height:210px;max-height:230px}
+.base .card{background:var(--panel2);border:1px solid var(--line2);
+  border-radius:9px;padding:8px 10px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.base .cl{font-family:var(--mono);font-size:8.5px;letter-spacing:.5px;
+  text-transform:uppercase;color:var(--faint);margin-bottom:5px}
+.base .cl b{color:var(--txt)}
+.ecgbox{gap:3px}
+.ecgbox svg{flex:1;min-height:0;width:100%}
+.ecgbox .ecgmeta{font-family:var(--mono);font-size:8.5px;color:var(--faint);
+  display:flex;justify-content:space-between;margin-top:2px}
+.qbox .qtxt{font-size:12px;line-height:1.42;color:var(--txt);flex:1;overflow:auto}
+.qbox .qopts{margin-top:4px;font-family:var(--mono);font-size:9.5px;color:var(--dim);line-height:1.4}
+.qbox .qopts b{color:var(--txt)}
+.qbox .qtag{display:inline-block;font-family:var(--mono);font-size:8px;
+  padding:1px 5px;background:var(--panel);border:1px solid var(--line2);
+  border-radius:4px;color:var(--dim);margin-right:4px}
+
+.rbox .rrows{flex:1;overflow:auto;display:flex;flex-direction:column;gap:2px}
+.rrow{display:flex;align-items:baseline;gap:6px;padding:3px 5px;border-radius:5px;font-size:11px}
+.rrow.orig{background:#e7f4ec}
+.rrow.flip{background:#fbe7e5}
+.rrow .rk{font-family:var(--mono);font-size:8.5px;color:var(--faint);
+  flex:0 0 74px;text-transform:uppercase;letter-spacing:.3px}
+.rrow .rv{flex:1;font-size:11px;word-break:break-word}
+.rrow.orig .rv{color:var(--ok);font-weight:600}
+.rrow.flip .rv{color:#8c2c25}
+.rbox .verdict{margin-top:5px;padding:5px 8px;border-radius:6px;
+  font-family:var(--mono);font-size:10px;font-weight:600;text-align:center;letter-spacing:.3px}
+.verdict.v-TEXT{background:#fbe1cf;color:#8a4a12}
+.verdict.v-ECG {background:#d5e8f5;color:#1d4d77}
+.verdict.v-BAL {background:#e6ecec;color:#3a5257}
+.verdict.v-INS {background:#fbf1d8;color:#7a5c12}
+.verdict.v-UNK {background:#eef0f2;color:#5a5f66}
+
+/* ---- Vista contextual ---- */
+.context{padding:11px 14px;overflow:auto;background:var(--bg)}
+.ctx-head{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.ctx-tag{font-family:var(--mono);font-size:9.5px;font-weight:600;color:#fff;
+  background:var(--ecg-mod);border-radius:5px;padding:3px 8px;letter-spacing:.4px}
+.ctx-tag.global{background:var(--warn)}
+.ctx-title{font-size:14px;font-weight:600;color:var(--txt)}
+.ctx-q{font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-left:auto}
+.ctx-body{background:var(--panel);border:1px solid var(--line);border-radius:11px;
+  padding:14px 16px;box-shadow:0 1px 2px rgba(60,52,38,.10)}
+.ctx-body .csec{margin-bottom:14px}
+.ctx-body .csec:last-child{margin-bottom:0}
+.ctx-body h4{margin:0 0 6px;font-size:11.5px;font-weight:600;color:var(--txt);
+  font-family:var(--mono);text-transform:uppercase;letter-spacing:.4px}
+.ctx-body p{margin:0 0 6px;font-size:11.5px;line-height:1.5;color:var(--dim)}
+
+/* GLOBAL */
+.gcards{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.gcard{background:var(--panel2);border:1px solid var(--line2);border-radius:9px;padding:9px 10px}
+.gcard .gk{font-family:var(--mono);font-size:8.5px;text-transform:uppercase;
+  letter-spacing:.4px;color:var(--faint)}
+.gcard .gv{font-family:var(--mono);font-size:19px;font-weight:600;color:var(--txt);margin-top:2px}
+.gcard .gci{font-family:var(--mono);font-size:9px;color:var(--dim);margin-top:1px}
+.gcard .gn{font-family:var(--mono);font-size:8.5px;color:var(--faint);margin-top:3px}
+.gtax{display:flex;flex-direction:column;gap:5px}
+.gtax .grow{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:10.5px}
+.gtax .glab{flex:0 0 130px;font-weight:600}
+.gtax .gbar{flex:1;height:14px;border-radius:4px;background:var(--panel2);
+  border:1px solid var(--line2);overflow:hidden}
+.gtax .gbar span{display:block;height:100%}
+.gtax .gnum{flex:0 0 60px;text-align:right;color:var(--dim)}
+
+/* ENCODER */
+.enc-att{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+  padding:10px 12px;margin-bottom:10px}
+.enc-att .row{display:flex;justify-content:space-between;gap:12px;font-family:var(--mono);
+  font-size:10.5px;padding:3px 0;border-bottom:1px dashed var(--line2)}
+.enc-att .row:last-child{border-bottom:none}
+.enc-att .row b{color:var(--txt);font-weight:600}
+.enc-fid table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:10.5px}
+.enc-fid th,.enc-fid td{padding:5px 7px;border-bottom:1px solid var(--line2);text-align:left}
+.enc-fid th{font-size:8.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--faint)}
+.enc-fid td.n{text-align:right;font-weight:600}
+.enc-note{background:#fbf1d8;border:1px solid #ddc88f;color:#7a5c12;border-radius:8px;
+  padding:8px 11px;font-size:11px;line-height:1.5;margin-top:8px}
+
+/* PROYECTOR */
+.pca-wrap{display:grid;grid-template-columns:1.4fr 1fr;gap:12px;align-items:start}
+.pca-svg{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+  min-height:260px}
+.pca-legend{font-family:var(--mono);font-size:10.5px;line-height:1.7}
+.pca-legend .dot{display:inline-block;width:9px;height:9px;border-radius:50%;
+  margin-right:6px;vertical-align:middle}
+
+/* FUSIÓN + LLM */
+.stage-tab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11px}
+.stage-tab th,.stage-tab td{padding:5px 7px;text-align:left;border-bottom:1px solid var(--line2)}
+.stage-tab th{font-size:8.5px;text-transform:uppercase;letter-spacing:.3px;
+  color:var(--faint);font-weight:600}
+.stage-tab td.n{text-align:right;font-weight:600;color:var(--txt)}
+.stage-tab td.hl{background:#d8ecee;color:#0c5a61}
+.llm-curve{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;
+  padding:8px;margin-top:10px}
+.llm-curve svg{width:100%;height:220px}
+
+/* RESPUESTA (contrastiva) */
+.cf-tab{width:100%;border-collapse:collapse;font-size:11.5px}
+.cf-tab th,.cf-tab td{padding:6px 8px;border-bottom:1px solid var(--line2);text-align:left;vertical-align:top}
+.cf-tab th{font-family:var(--mono);font-size:8.5px;text-transform:uppercase;letter-spacing:.3px;color:var(--faint)}
+.cf-tab tr.orig{background:#e7f4ec}
+.cf-tab tr.flip{background:#fbe7e5}
+.cf-tab tr.flip td.flag{color:#8c2c25;font-weight:600}
+.cf-tab td.k{font-family:var(--mono);font-size:9.5px;color:var(--dim);width:130px}
+
+/* ---- Franja SIPA + advertencias ---- */
+.sipa{background:var(--panel2);border-top:1px solid var(--line);padding:7px 14px;
+  display:flex;align-items:center;gap:14px;font-family:var(--mono);font-size:9px;color:var(--dim)}
+.sipa .step{padding:2px 7px;border:1px solid var(--line2);border-radius:5px;background:var(--panel);
+  color:var(--faint);text-transform:uppercase;letter-spacing:.5px;font-size:8.5px}
+.sipa .step.on{background:var(--ecg-mod);color:#fff;border-color:var(--ecg-mod)}
+.sipa .arrow{color:var(--faint)}
+.sipa .warn{margin-left:auto;font-size:9px;color:var(--warn);max-width:520px;
+  text-align:right;line-height:1.35}
+
+/* misc */
+.hidden{display:none !important}
+.mono{font-family:var(--mono)}
+.dim{color:var(--dim)}
+</style>
+</head>
+<body>
+
+<!-- ================= ÍNDICE LATERAL ================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <div class="t1">Auditoría contrafactual<br><b>dependencia textual</b> · <i>anclaje temporal</i></div>
+    <div class="t2">MODELO ECG-TEXTO · MINI-STREASONER-ECG · v2</div>
+    <div class="audience">Vista para investigador / desarrollador / auditor. No es herramienta clínica.</div>
+  </div>
+
+  <div class="filters">
+    <div class="fl">
+      <label>Filtrar por clase local</label>
+      <select id="fClass">
+        <option value="">todas</option>
+        <option value="TEXT_DOMINANT">TEXT_DOMINANT</option>
+        <option value="ECG_DOMINANT">ECG_DOMINANT</option>
+        <option value="BALANCED">BALANCED</option>
+        <option value="INSENSITIVE">INSENSITIVE</option>
+        <option value="UNCLEAR">UNCLEAR</option>
+      </select>
+    </div>
+    <div class="fl">
+      <label>Filtrar por tipo de pregunta</label>
+      <select id="fQtype"><option value="">todas</option></select>
+    </div>
+    <div class="fl">
+      <label>Buscar en pregunta</label>
+      <input id="fSearch" type="text" placeholder="p. ej. hipertrofia">
+    </div>
+  </div>
+
+  <div class="ctab" id="ctabWrap">
+    <div class="idx-empty">Cargando índice…</div>
+  </div>
+</aside>
+
+<!-- ================= MAIN ================= -->
+<main>
+
+  <!-- Flujo del modelo (siempre visible) -->
+  <section class="flow">
+    <div class="flow-head">
+      <span class="flow-title">Flujo del modelo</span>
+      <span class="flow-hint">Click en un <b>nodo</b> para inspeccionarlo · <b>GLOBAL</b> para el conjunto</span>
+    </div>
+    <div class="flow-nodes" id="flowNodes">
+      <div class="fnode global on" data-stage="global"><span class="fn-lab">GLOBAL</span><span class="fn-sub">conjunto</span></div>
+      <span class="farrow">·</span>
+      <div class="fnode" data-stage="encoder"  ><span class="fn-lab">Encoder temporal</span><span class="fn-sub">anclaje ECG</span></div>
+      <span class="farrow">→</span>
+      <div class="fnode" data-stage="projector"><span class="fn-lab">Proyector latente</span><span class="fn-sub">alineación</span></div>
+      <span class="farrow">→</span>
+      <div class="fnode" data-stage="fusion"   ><span class="fn-lab">Fusión</span><span class="fn-sub">inputs_embeds</span></div>
+      <span class="farrow">→</span>
+      <div class="fnode" data-stage="llm"      ><span class="fn-lab">LLM (Qwen)</span><span class="fn-sub">29 capas</span></div>
+      <span class="farrow">→</span>
+      <div class="fnode" data-stage="output"   ><span class="fn-lab">Respuesta</span><span class="fn-sub">contrafactual</span></div>
+    </div>
+  </section>
+
+  <!-- Base persistente -->
+  <section class="base">
+    <div class="card ecgbox">
+      <div class="cl">ECG · <b id="ecgId">—</b> <span id="ecgLead" class="dim mono" style="float:right"></span></div>
+      <svg id="ecgSvg" viewBox="0 0 400 110" preserveAspectRatio="none"></svg>
+      <div class="ecgmeta"><span id="ecgLen">—</span><span id="ecgSrc">PTB-XL · 1000 pasos</span></div>
+    </div>
+    <div class="card qbox">
+      <div class="cl">Pregunta <span id="qType" class="qtag"></span></div>
+      <div class="qtxt" id="qText">—</div>
+      <div class="qopts" id="qOpts"></div>
+    </div>
+    <div class="card rbox">
+      <div class="cl">Respuestas por intervención</div>
+      <div class="rrows" id="rRows"></div>
+      <div class="verdict v-UNK" id="rVerdict">—</div>
+    </div>
+  </section>
+
+  <!-- Vista contextual (cambia por click) -->
+  <section class="context">
+    <div class="ctx-head">
+      <span class="ctx-tag" id="ctxTag">GLOBAL</span>
+      <span class="ctx-title" id="ctxTitle">Conjunto de auditoría</span>
+      <span class="ctx-q" id="ctxQ">¿Cómo se comporta el modelo en todo el conjunto?</span>
+    </div>
+    <div class="ctx-body" id="ctxBody">
+      <p>Cargando…</p>
+    </div>
+  </section>
+
+  <!-- Franja SIPA -->
+  <footer class="sipa">
+    <span class="step on" id="stepS">Sample</span>
+    <span class="arrow">›</span>
+    <span class="step" id="stepI">Intervene</span>
+    <span class="arrow">›</span>
+    <span class="step" id="stepP">Predict</span>
+    <span class="arrow">›</span>
+    <span class="step" id="stepA">Aggregate</span>
+    <span class="warn" id="sipaWarn">El marco detecta desbalance modal; no atribuye causa clínica. (Molnar §4.10)</span>
+  </footer>
+
+</main>
+
+<script>
+/* ========================================================================
+   Estado global
+   ======================================================================== */
+const DATA  = window.ECGQA_DATA   || {samples:[], globals:{}, qtypes:[]};
+const TRACE = window.TRACING_DATA || {cases:[], class_counts:{}, thresholds:{}};
+
+const state = {
+  activeStage: 'global',      // global | encoder | projector | fusion | llm | output
+  activeCase : null,          // id de sample (ecgqa)
+  filters    : {cls:'', qtype:'', q:''}
+};
+
+/* Mapa auxiliar: id ecgqa -> case de tracing (por posición de índice) */
+const TRACE_BY_ID = {};
+(TRACE.cases||[]).forEach((c,i)=>{
+  TRACE_BY_ID[c.case_id] = c;
+  TRACE_BY_ID[String(c.case_id)] = c;
+});
+function traceOf(sample){
+  if(!sample) return null;
+  // intento por real_id, id, ecg_id
+  return TRACE_BY_ID[sample.real_id] || TRACE_BY_ID[sample.id]
+      || TRACE_BY_ID[sample.ecg_id]  || null;
+}
+
+/* ========================================================================
+   Índice lateral
+   ======================================================================== */
+function initFilters(){
+  const q = document.getElementById('fQtype');
+  (DATA.qtypes||[]).forEach(t=>{
+    const o=document.createElement('option'); o.value=t; o.textContent=t; q.appendChild(o);
+  });
+  ['fClass','fQtype'].forEach(id=>{
+    document.getElementById(id).addEventListener('change',e=>{
+      state.filters[id==='fClass'?'cls':'qtype']=e.target.value; renderIndex();
+    });
+  });
+  document.getElementById('fSearch').addEventListener('input',e=>{
+    state.filters.q = e.target.value.trim().toLowerCase(); renderIndex();
+  });
+}
+
+function localClass(sample){
+  const t = traceOf(sample);
+  if(t && t.case_dominance) return t.case_dominance;
+  // heurística de respaldo con las tasas de flip por sample
+  const iv = sample.interventions || [];
+  const flipTxt = iv.some(x=>/pregunta|neutra|text/i.test(x.name||x.config||'')&&x.flip);
+  const flipEcg = iv.some(x=>/ecg|ruido|ceros|mask/i.test(x.name||x.config||'')&&x.flip);
+  if(flipTxt && !flipEcg) return 'TEXT_DOMINANT';
+  if(flipEcg && !flipTxt) return 'ECG_DOMINANT';
+  if(flipTxt && flipEcg)  return 'BALANCED';
+  return 'INSENSITIVE';
+}
+function classPill(c){
+  const short = {TEXT_DOMINANT:'TEXT',ECG_DOMINANT:'ECG',BALANCED:'BAL',
+                 INSENSITIVE:'INS',UNCLEAR:'UNK'}[c]||'—';
+  const kls   = {TEXT_DOMINANT:'cls-TEXT',ECG_DOMINANT:'cls-ECG',BALANCED:'cls-BAL',
+                 INSENSITIVE:'cls-INS',UNCLEAR:'cls-UNK'}[c]||'cls-UNK';
+  return `<span class="cls-pill ${kls}">${short}</span>`;
+}
+
+function filteredSamples(){
+  const {cls,qtype,q} = state.filters;
+  return (DATA.samples||[]).filter(s=>{
+    if(qtype && s.qtype!==qtype) return false;
+    if(q && !(s.question||'').toLowerCase().includes(q)) return false;
+    if(cls && localClass(s)!==cls) return false;
+    return true;
+  });
+}
+function renderIndex(){
+  const wrap = document.getElementById('ctabWrap');
+  const rows = filteredSamples();
+  if(!rows.length){
+    wrap.innerHTML = '<div class="idx-empty">Sin casos con esos filtros.</div>'; return;
+  }
+  const html = ['<table><thead><tr><th>ID</th><th>Clase</th><th>Tipo</th><th class="dv">D</th></tr></thead><tbody>'];
+  rows.slice(0,300).forEach(s=>{
+    const cls = localClass(s);
+    const sel = (state.activeCase===s.id)?'sel':'';
+    html.push(`<tr class="${sel}" data-id="${s.id}">`+
+      `<td>${s.id}</td>`+
+      `<td>${classPill(cls)}</td>`+
+      `<td>${(s.qtype||'').slice(0,7)}</td>`+
+      `<td class="dv">${(s.D??0).toFixed(2)}</td>`+
+      `</tr>`);
+  });
+  html.push('</tbody></table>');
+  wrap.innerHTML = html.join('');
+  wrap.querySelectorAll('tr[data-id]').forEach(tr=>{
+    tr.addEventListener('click',()=>{ selectCase(tr.dataset.id); });
+  });
+}
+
+/* ========================================================================
+   Selección de caso · Base persistente
+   ======================================================================== */
+function selectCase(id){
+  const s = (DATA.samples||[]).find(x=>String(x.id)===String(id));
+  if(!s) return;
+  state.activeCase = s.id;
+  renderIndex(); renderBase(s); renderContext(); updateSipa();
+}
+
+function renderBase(s){
+  // ECG
+  document.getElementById('ecgId').textContent = s.ecg_id||s.real_id||s.id||'—';
+  document.getElementById('ecgLead').textContent = 'lead II';
+  const arr = (s.sig && s.sig.arr) ? s.sig.arr : [];
+  const svg = d3.select('#ecgSvg'); svg.selectAll('*').remove();
+  if(arr.length){
+    const w=400,h=110,pad=6;
+    const x = d3.scaleLinear().domain([0,arr.length-1]).range([pad,w-pad]);
+    const ext = d3.extent(arr);
+    const y = d3.scaleLinear().domain(ext).range([h-pad,pad]);
+    const line = d3.line().x((d,i)=>x(i)).y(d=>y(d)).curve(d3.curveMonotoneX);
+    svg.append('path').attr('d',line(arr))
+       .attr('fill','none').attr('stroke','var(--ecg-mod)').attr('stroke-width',1.1);
+    document.getElementById('ecgLen').textContent = `${arr.length} muestras`;
+  } else {
+    svg.append('text').attr('x',200).attr('y',60).attr('text-anchor','middle')
+       .attr('font-family','var(--mono)').attr('font-size',10).attr('fill','#8a939e')
+       .text('sin traza disponible');
+  }
+  // Pregunta
+  document.getElementById('qType').textContent = s.qtype||'—';
+  document.getElementById('qText').textContent = s.question||'—';
+  const opts = (s.options||[]).filter(o=>o);
+  document.getElementById('qOpts').innerHTML = opts.length
+    ? `<b>Opciones:</b> ${opts.join(' · ')}<br><b>Ground truth:</b> ${s.gt||'—'}`
+    : `<b>Ground truth:</b> ${s.gt||'—'}`;
+  // Respuestas por intervención
+  const rows = [];
+  const orig = s.pred || '—';
+  rows.push({k:'original', v:orig, cls:'orig'});
+  (s.interventions||[]).forEach(iv=>{
+    const name = iv.name || iv.config || 'variante';
+    const flip = !!iv.flip;
+    rows.push({k:name, v:iv.answer||iv.pred||(flip?'(cambió)':'(sin cambio)'), cls:flip?'flip':''});
+  });
+  document.getElementById('rRows').innerHTML = rows.map(r=>
+    `<div class="rrow ${r.cls}"><span class="rk">${r.k}</span><span class="rv">${r.v}</span></div>`
+  ).join('');
+  const cls = localClass(s);
+  const v = document.getElementById('rVerdict');
+  v.className = 'verdict v-'+({TEXT_DOMINANT:'TEXT',ECG_DOMINANT:'ECG',BALANCED:'BAL',
+                                INSENSITIVE:'INS',UNCLEAR:'UNK'}[cls]||'UNK');
+  v.textContent = 'clase local · '+cls;
+}
+
+/* ========================================================================
+   Flujo del modelo
+   ======================================================================== */
+function initFlow(){
+  document.querySelectorAll('#flowNodes .fnode').forEach(n=>{
+    n.addEventListener('click',()=>{
+      document.querySelectorAll('#flowNodes .fnode').forEach(x=>x.classList.remove('on'));
+      n.classList.add('on');
+      state.activeStage = n.dataset.stage;
+      renderContext(); updateSipa();
+    });
+  });
+}
+
+/* ========================================================================
+   Vista contextual
+   ======================================================================== */
+const STAGE_META = {
+  global   :{tag:'GLOBAL',   title:'Conjunto de auditoría',           q:'¿Cómo se comporta el modelo en todo el conjunto?', cls:'global'},
+  encoder  :{tag:'ENCODER',  title:'Anclaje temporal · atención',      q:'¿A dónde mira el modelo en la ECG?'},
+  projector:{tag:'PROYECTOR',title:'Alineación en el espacio latente', q:'¿Se separan los embeddings de texto y ECG?'},
+  fusion   :{tag:'FUSIÓN',   title:'Peso modal en la entrada al LLM',  q:'¿Cuánto pesa cada modalidad al entrar al LLM?'},
+  llm      :{tag:'LLM',      title:'Degradación por capa',             q:'¿Dónde se pierde la señal del ECG?'},
+  output   :{tag:'RESPUESTA',title:'Explicación contrastiva del caso', q:'¿Por qué respondió esto y no lo otro?'}
+};
+
+function renderContext(){
+  const st = state.activeStage;
+  const m  = STAGE_META[st];
+  const tag = document.getElementById('ctxTag');
+  tag.textContent = m.tag; tag.className = 'ctx-tag'+(m.cls==='global'?' global':'');
+  document.getElementById('ctxTitle').textContent = m.title;
+  document.getElementById('ctxQ').textContent     = m.q;
+  const body = document.getElementById('ctxBody');
+  body.innerHTML = '';
+  if(st==='global'   ) return renderGlobal(body);
+  const s = (DATA.samples||[]).find(x=>x.id===state.activeCase);
+  if(!s){ body.innerHTML='<p>Selecciona un caso en el índice lateral para inspeccionar esta etapa.</p>'; return; }
+  const t = traceOf(s);
+  if(st==='encoder'  ) return renderEncoder(body, s, t);
+  if(st==='projector') return renderProjector(body, s, t);
+  if(st==='fusion'   ) return renderStage(body, s, t, 'fusion');
+  if(st==='llm'      ) return renderLLM(body, s, t);
+  if(st==='output'   ) return renderOutput(body, s, t);
+}
+
+/* ---------- GLOBAL ---------- */
+function renderGlobal(body){
+  const g = DATA.globals || {};
+  const cf = g.counterfactual || {};
+  const ab = g.ablation || {};
+  const ev = g.evaluation || {};
+  const cc = TRACE.class_counts || {};
+  const total = Object.values(cc).reduce((a,b)=>a+b,0)||1;
+
+  const wilson = (p,n)=>{
+    if(!n) return [0,0];
+    const z=1.96, z2=z*z;
+    const den = 1+z2/n, ctr = p+z2/(2*n);
+    const rad = z*Math.sqrt(p*(1-p)/n + z2/(4*n*n));
+    return [(ctr-rad)/den, (ctr+rad)/den];
+  };
+  const nCF = cf.count||0;
+  const qCF = cf.QCFR||0;
+  const eCF = cf.ECFR||0;
+  const [ql,qh] = wilson(qCF,nCF);
+  const [el,eh] = wilson(eCF,nCF);
+  const nAbs = ev.count||nCF;
+
+  body.innerHTML = `
+    <div class="csec">
+      <h4>Métricas agregadas (n=${nCF} intervenidos · N_total=${nAbs})</h4>
+      <div class="gcards">
+        <div class="gcard"><div class="gk">QCFR</div>
+          <div class="gv">${qCF.toFixed(3)}</div>
+          <div class="gci">IC95 [${ql.toFixed(3)} · ${qh.toFixed(3)}]</div>
+          <div class="gn">${Math.round(qCF*nCF)} de ${nCF} respuestas cambian con intervención textual</div></div>
+        <div class="gcard"><div class="gk">ECFR</div>
+          <div class="gv">${eCF.toFixed(3)}</div>
+          <div class="gci">IC95 [${el.toFixed(3)} · ${eh.toFixed(3)}]</div>
+          <div class="gn">${Math.round(eCF*nCF)} de ${nCF} cambian con intervención ECG</div></div>
+        <div class="gcard"><div class="gk">D_texto = QCFR − ECFR</div>
+          <div class="gv">${(qCF-eCF).toFixed(3)}</div>
+          <div class="gci">calibración: promedio de intervenciones</div>
+          <div class="gn">reportar tres calibraciones (§Molnar 2.4)</div></div>
+        <div class="gcard"><div class="gk">Exactitud (sí/no)</div>
+          <div class="gv">${(ev.yesno_accuracy||0).toFixed(3)}</div>
+          <div class="gci">n=${ev.yesno_count||0}</div>
+          <div class="gn">EM=${(ev.exact_match||0).toFixed(3)} · F1=${(ev.token_f1||0).toFixed(3)}</div></div>
+      </div>
+    </div>
+
+    <div class="csec">
+      <h4>Distribución de la taxonomía local (n=${total})</h4>
+      <div class="gtax" id="gtax"></div>
+    </div>
+
+    <div class="csec">
+      <h4>Ablación modal (n=${(ab.per_config&&ab.per_config.full)?ab.per_config.full.count:0} por config.)</h4>
+      <p><b>cont_texto</b> = ${(ab.dominance&&ab.dominance.text_contribution||0).toFixed(3)} ·
+         <b>cont_ECG</b> = ${(ab.dominance&&ab.dominance.ecg_contribution||0).toFixed(3)} ·
+         <b>D_abl</b> = ${(ab.dominance&&ab.dominance.textual_dominance||0).toFixed(3)}.
+         La contribución del ECG es indistinguible de cero bajo bootstrap pareado (Molnar §2.4).</p>
+    </div>
+
+    <div class="csec" style="background:#fbf1d8;border:1px solid #ddc88f;border-radius:8px;padding:10px 12px">
+      <h4 style="color:#7a5c12">Advertencias</h4>
+      <p style="color:#7a5c12">· QCFR y ECFR <b>no son conmensurables</b>: eliminar una palabra ≠ ocluir 250 pasos de ECG.<br>
+      · <code>D_texto</code> depende de la calibración de la intervención — reportar las tres calibraciones.<br>
+      · El marco detecta desbalance modal, no atribuye causa. Verbos permitidos: sugiere, es consistente con, aporta evidencia.</p>
+    </div>
+  `;
+
+  const cats = [
+    {k:'TEXT_DOMINANT',c:'#bf7619'},{k:'ECG_DOMINANT',c:'#2f6db0'},
+    {k:'BALANCED',c:'#8a8f97'},{k:'INSENSITIVE',c:'#bd881c'},{k:'UNCLEAR',c:'#586470'}
+  ];
+  const gx = document.getElementById('gtax');
+  cats.forEach(c=>{
+    const n = cc[c.k]||0, pc = (n/total*100).toFixed(1);
+    gx.insertAdjacentHTML('beforeend',
+      `<div class="grow"><span class="glab">${c.k}</span>`+
+      `<span class="gbar"><span style="width:${pc}%;background:${c.c}"></span></span>`+
+      `<span class="gnum">${n} · ${pc}%</span></div>`);
+  });
+}
+
+/* ---------- ENCODER ---------- */
+function renderEncoder(body, s, t){
+  body.innerHTML = `
+    <div class="csec">
+      <h4>Atención del codificador temporal (agregado, 100 muestras de test)</h4>
+      <div class="enc-att">
+        <div class="row"><span>Entropía normalizada por token · <b>original</b></span><span><b>0,9999</b> [0,9999 · 1,0000]</span></div>
+        <div class="row"><span>Peso máximo por posición · original</span><span>~1,05× uniforme (0,001)</span></div>
+        <div class="row"><span>Correlación entre los 4 tokens</span><span>0,72 – 0,91 · no se especializan</span></div>
+        <div class="row"><span>Entropía normalizada · <b>corregido (query_init_std=1,0)</b></span><span><b>0,9490</b> [0,9472 · 0,9509]</span></div>
+        <div class="row"><span>Peso máximo · corregido</span><span>0,68 [0,67 · 0,70] · hasta 1,71× uniforme</span></div>
+      </div>
+    </div>
+    <div class="csec">
+      <h4>Fidelidad — probes lineales (ridge, 5-fold CV, n=250)</h4>
+      <div class="enc-fid"><table>
+        <tr><th>Descriptor</th><th class="n">Original</th><th class="n">Sin entrenar (ref.)</th><th class="n">Encoder ampliado</th></tr>
+        <tr><td>Frecuencia dominante (ritmo)</td><td class="n">0,157</td><td class="n">0,247</td><td class="n"><b>0,329</b></td></tr>
+        <tr><td>Autocorrelación (lag 1)</td>    <td class="n">0,855</td><td class="n">0,864</td><td class="n">0,855</td></tr>
+        <tr><td>Rango</td>                       <td class="n">0,346</td><td class="n">0,290</td><td class="n">0,411</td></tr>
+      </table></div>
+      <p>El entrenamiento original degradaba la característica clínicamente más relevante (ritmo, R² 0,157 &lt; 0,247 del encoder sin entrenar).</p>
+    </div>
+    <div class="enc-note">
+      <b>Nota de fidelidad de datos:</b> la matriz de atención por caso aún no se exporta a los artefactos JSON de este visualizador; las cifras arriba son las agregadas sobre 100 muestras de test reportadas en <code>REDACCION_PARA_EL_ARTICULO.md</code>. Al añadir <code>encoder_attention</code> al artefacto por caso se activará la vista temporal individual.
+    </div>
+  `;
+}
+
+/* ---------- PROYECTOR (PCA por caso) ---------- */
+function renderProjector(body, s, t){
+  if(!t || !t.latent || !t.latent.points){
+    body.innerHTML = '<p>Este caso no tiene proyección PCA en <code>tracing_data.json</code>. Selecciona uno de los 50 casos trazados.</p>';
+    return;
+  }
+  body.innerHTML = `
+    <div class="csec">
+      <h4>Proyección 2-D de los embeddings del proyector latente (caso ${s.id})</h4>
+      <div class="pca-wrap">
+        <svg class="pca-svg" id="pcaSvg" viewBox="0 0 500 300" preserveAspectRatio="xMidYMid meet"></svg>
+        <div>
+          <div class="pca-legend">
+            <div><span class="dot" style="background:var(--text-mod)"></span>texto (query)</div>
+            <div><span class="dot" style="background:var(--ecg-mod)"></span>ECG original</div>
+            <div><span class="dot" style="background:var(--ecg-blue)"></span>ECG intervenido</div>
+          </div>
+          <p style="margin-top:10px">Si los puntos de texto quedan lejos de los de ECG, el proyector separó las modalidades — pero no dice cuál pesa más en la respuesta. Combinar con Fusión y LLM.</p>
+        </div>
+      </div>
+    </div>`;
+  const pts = t.latent.points;
+  const svg = d3.select('#pcaSvg');
+  const w=500,h=300,pad=20;
+  const x = d3.scaleLinear().domain(d3.extent(pts,p=>p.x)).nice().range([pad,w-pad]);
+  const y = d3.scaleLinear().domain(d3.extent(pts,p=>p.y)).nice().range([h-pad,pad]);
+  const color = k=>({texto:'#bf7619',ecg_orig:'#10848d',ecg_pert:'#2f6db0'}[k]||'#8a939e');
+  svg.selectAll('circle').data(pts).enter().append('circle')
+     .attr('cx',p=>x(p.x)).attr('cy',p=>y(p.y)).attr('r',4.5)
+     .attr('fill',p=>color(p.kind)).attr('opacity',.85)
+     .append('title').text(p=>`${p.label||''} (${p.kind})`);
+}
+
+/* ---------- FUSIÓN ---------- */
+function renderStage(body, s, t, stageKey){
+  if(!t || !t.stages || !t.stages[stageKey]){
+    body.innerHTML = '<p>Este caso no está en <code>tracing_data.json</code> (50 casos trazados).</p>'; return;
+  }
+  const st = t.stages[stageKey];
+  body.innerHTML = `
+    <div class="csec">
+      <h4>Distancias coseno en la etapa · fusión (<code>inputs_embeds</code>)</h4>
+      <table class="stage-tab">
+        <tr><th>Origen del cambio</th><th class="n">Distancia coseno</th></tr>
+        <tr><td>Original vs texto contrafactual</td>
+            <td class="n ${Math.abs(st.impact_text)>Math.abs(st.impact_ecg)?'hl':''}">${(st.impact_text||0).toFixed(4)}</td></tr>
+        <tr><td>Original vs ECG contrafactual</td>
+            <td class="n ${Math.abs(st.impact_ecg)>Math.abs(st.impact_text)?'hl':''}">${(st.impact_ecg||0).toFixed(4)}</td></tr>
+        <tr><td>Δ (texto − ECG)</td>
+            <td class="n">${(st.delta_text_ecg||0).toFixed(4)}</td></tr>
+      </table>
+      <p>En esta etapa la representación está más cerca del original cuando cambia la modalidad con menor impacto. Cifras negativas de Δ indican mayor sensibilidad al ECG en la fusión.</p>
+    </div>`;
+}
+
+/* ---------- LLM (curva por capa) ---------- */
+function renderLLM(body, s, t){
+  if(!t || !t.llm_layers){
+    body.innerHTML = '<p>Este caso no está en <code>tracing_data.json</code>.</p>'; return;
+  }
+  const L = t.llm_layers.length;
+  body.innerHTML = `
+    <div class="csec">
+      <h4>Degradación por capa del LLM · caso ${s.id}</h4>
+      <p>Distancia coseno entre la representación original y la variante contrafactual por capa (0 → ${L-1}).</p>
+      <div class="llm-curve"><svg id="llmSvg"></svg></div>
+      <p style="margin-top:6px">La curva del ECG suele decaer a lo largo de las capas mientras la del texto se mantiene: la información fisiológica entra al LLM pero se pierde en la propagación.</p>
+    </div>`;
+  const svg = d3.select('#llmSvg');
+  const box = svg.node().getBoundingClientRect();
+  const w = box.width||600, h=220, pad={l:36,r:12,t:10,b:24};
+  svg.attr('viewBox',`0 0 ${w} ${h}`);
+  const layers = t.llm_layers.map(l=>({idx:l.layer_idx??l.idx??0,
+                                        it:l.impact_text||0, ie:l.impact_ecg||0}));
+  const x = d3.scaleLinear().domain([0,L-1]).range([pad.l,w-pad.r]);
+  const yMax = d3.max(layers,d=>Math.max(d.it,d.ie))||0.1;
+  const y = d3.scaleLinear().domain([0,yMax*1.1]).range([h-pad.b,pad.t]);
+  svg.append('g').attr('transform',`translate(0,${h-pad.b})`)
+     .call(d3.axisBottom(x).ticks(6).tickFormat(d=>`L${d}`))
+     .selectAll('text').attr('font-family','var(--mono)').attr('font-size',9);
+  svg.append('g').attr('transform',`translate(${pad.l},0)`)
+     .call(d3.axisLeft(y).ticks(4))
+     .selectAll('text').attr('font-family','var(--mono)').attr('font-size',9);
+  const line = k => d3.line().x(d=>x(d.idx)).y(d=>y(d[k])).curve(d3.curveMonotoneX);
+  svg.append('path').attr('d',line('it')(layers))
+     .attr('fill','none').attr('stroke','var(--text-mod)').attr('stroke-width',1.8);
+  svg.append('path').attr('d',line('ie')(layers))
+     .attr('fill','none').attr('stroke','var(--ecg-mod)').attr('stroke-width',1.8);
+  svg.append('text').attr('x',w-pad.r).attr('y',pad.t+10).attr('text-anchor','end')
+     .attr('font-family','var(--mono)').attr('font-size',9).attr('fill','var(--text-mod)')
+     .text('texto');
+  svg.append('text').attr('x',w-pad.r).attr('y',pad.t+22).attr('text-anchor','end')
+     .attr('font-family','var(--mono)').attr('font-size',9).attr('fill','var(--ecg-mod)')
+     .text('ECG');
+}
+
+/* ---------- RESPUESTA (contrastivo) ---------- */
+function renderOutput(body, s, t){
+  const rows = [
+    {k:'original',                        pred:s.pred,                              flip:false, note:'entrada completa'},
+  ];
+  if(t){
+    if(t.prediction_text_cf!==undefined) rows.push({k:'texto contrafactual',
+        pred:t.prediction_text_cf, flip:(t.flips&&t.flips.text_cf), note:'reformular la pregunta'});
+    if(t.prediction_ecg_cf !==undefined) rows.push({k:'ECG contrafactual',
+        pred:t.prediction_ecg_cf,  flip:(t.flips&&t.flips.ecg_cf),  note:'ocluir ventana temporal'});
+    if(t.prediction_neutral!==undefined) rows.push({k:'pregunta neutra',
+        pred:t.prediction_neutral, flip:(t.flips&&t.flips.neutral), note:'control positivo'});
+    if(t.prediction_conflict!==undefined) rows.push({k:'conflicto texto↔ECG',
+        pred:t.prediction_conflict,flip:(t.flips&&t.flips.conflict),note:'ver a quién sigue'});
+    if(t.prediction_no_ecg  !==undefined) rows.push({k:'sin ECG',
+        pred:t.prediction_no_ecg,  flip:(t.flips&&t.flips.no_ecg),  note:'ablación de modalidad'});
+  } else {
+    (s.interventions||[]).forEach(iv=>rows.push({
+      k:iv.name||iv.config||'variante', pred:iv.answer||iv.pred||'—', flip:!!iv.flip, note:''
+    }));
+  }
+  const cls = localClass(s);
+  body.innerHTML = `
+    <div class="csec">
+      <h4>Tabla contrastiva · ¿por qué respondió esto y no lo otro?</h4>
+      <table class="cf-tab">
+        <thead><tr><th>Intervención</th><th>Predicción</th><th class="flag">Cambia</th><th>Sentido</th></tr></thead>
+        <tbody>
+          ${rows.map(r=>`
+            <tr class="${r.k==='original'?'orig':(r.flip?'flip':'')}">
+              <td class="k">${r.k}</td>
+              <td>${r.pred||'—'}</td>
+              <td class="flag">${r.k==='original'?'—':(r.flip?'sí':'no')}</td>
+              <td class="dim">${r.note||''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="csec">
+      <h4>Clase local (Molnar §4.4)</h4>
+      <p><span class="cls-pill cls-${({TEXT_DOMINANT:'TEXT',ECG_DOMINANT:'ECG',BALANCED:'BAL',INSENSITIVE:'INS',UNCLEAR:'UNK'}[cls])}">${cls}</span>
+      ${{
+        TEXT_DOMINANT:'Cambia con la intervención textual pero no con la ECG.',
+        ECG_DOMINANT :'Cambia con la intervención ECG pero no con la textual.',
+        BALANCED     :'Cambia con ambas — ninguna modalidad predomina.',
+        INSENSITIVE  :'No cambia con ninguna — el modelo puede estar colapsado o insensible.',
+        UNCLEAR      :'Sin evidencia clara para clasificar el caso.'
+      }[cls]||''}</p>
+    </div>`;
+}
+
+/* ========================================================================
+   Franja SIPA
+   ======================================================================== */
+function updateSipa(){
+  const on = document.getElementById.bind(document);
+  ['stepS','stepI','stepP','stepA'].forEach(id=>on(id).classList.remove('on'));
+  const st = state.activeStage;
+  if(st==='global'){
+    on('stepA').classList.add('on');
+    on('sipaWarn').textContent = 'Agregado sobre el conjunto de auditoría — reportar IC 95 % y n/N. (Molnar §2.4)';
+  } else if(st==='output'){
+    on('stepP').classList.add('on');
+    on('sipaWarn').textContent = 'Comparación contrastiva local. La explicación describe al modelo, no al fenómeno clínico. (Molnar §4.10)';
+  } else {
+    on('stepI').classList.add('on');
+    on('sipaWarn').textContent = 'Inspección interna model-specific · complementa (no reemplaza) el análisis contrafactual model-agnostic. (Molnar §4.3)';
+  }
+}
+
+/* ========================================================================
+   Bootstrap
+   ======================================================================== */
+function boot(){
+  if(!DATA.samples || !DATA.samples.length){
+    document.querySelector('main').innerHTML =
+      '<div style="padding:24px;color:#8c2c25;font-family:var(--mono)">No se cargaron los datos ' +
+      '<code>ecgqa_viz_data.js</code>. Verifica que existan en la misma carpeta.</div>';
+    return;
+  }
+  initFilters(); initFlow(); renderIndex();
+  // preseleccionar el primer caso con trace, si existe
+  const first = (DATA.samples||[]).find(s=>traceOf(s)) || DATA.samples[0];
+  selectCase(first.id);
+}
+window.addEventListener('DOMContentLoaded', boot);
+</script>
+</body>
+</html>

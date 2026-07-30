@@ -11,10 +11,13 @@
 <style>
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 :root{
-  --bg:#D7D3C8; --sidebar:#E7E3D9; --panel:#FBFAF5; --panel2:#EEEAE1; --line:#CBC5B7; --line2:#DBD6CB;
-  --txt:#222a32; --dim:#586470; --faint:#8a939e;
-  --text-mod:#bf7619; --sig-mod:#10848d; --ecg-blue:#2f6db0;
-  --alert:#c2433a; --ok:#2f8b5b; --warn:#bd881c; --neutral:#8a8f97;
+  /* Tema claro moderno · fondo blanco/gris dominante · estilo Vercel/Linear */
+  --bg:#F5F5F7; --sidebar:#F0F0F2; --panel:#FFFFFF; --panel2:#F9F9FB; --line:#E4E4E7; --line2:#F1F1F3;
+  --txt:#18181B; --dim:#52525B; --faint:#A1A1AA;
+  --text-mod:#B45309; --sig-mod:#0F766E; --ecg-blue:#1D4ED8;
+  --alert:#DC2626; --ok:#0F766E; --warn:#B45309; --neutral:#71717A;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.03),0 1px 3px rgba(0,0,0,.04);
+  --shadow-md:0 2px 4px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.05);
   --mono:'IBM Plex Mono',ui-monospace,monospace; --sans:'IBM Plex Sans',system-ui,sans-serif;
 }
 *{box-sizing:border-box}
@@ -34,7 +37,7 @@ svg{display:block}
 .modebadge{font-family:var(--mono);font-size:9px;font-weight:600;border-radius:5px;padding:3px 7px;display:inline-block;letter-spacing:.4px}
 .modebadge.internal{background:#d8ecee;color:#0c5a61;border:1px solid var(--sig-mod)}
 .modebadge.global{background:#fbf1d8;color:#7a5c12;border:1px solid var(--warn)}
-.block{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 9px;box-shadow:0 1px 2px rgba(70,64,52,.06)}
+.block{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:8px 9px;box-shadow:var(--shadow-sm)}
 .block .blab{font-family:var(--mono);font-size:8.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
 .scn{display:flex;flex-wrap:wrap;gap:4px}
 .scn button{font-family:var(--mono);font-size:9px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--dim);cursor:pointer;flex:1 1 auto;white-space:nowrap}
@@ -69,11 +72,11 @@ svg{display:block}
 /* main + grid */
 .main{flex:1;min-width:0;min-height:0;display:flex}
 .dash{flex:1;min-height:0;display:grid;gap:9px;padding:10px 11px;grid-template-columns:repeat(3,1fr);grid-template-rows:auto auto minmax(220px,1fr) minmax(255px,1fr);overflow-y:auto}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 12px;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 1px 2px rgba(60,52,38,.10),0 3px 8px rgba(60,52,38,.06)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:11px 12px;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden;box-shadow:var(--shadow-md)}
 .card.v1,.card.v4,.card.v6{grid-column:1 / -1}
 
 /* cabecera de identidad del caso (quién es este caso, qué se preguntó, qué se esperaba, qué respondió) */
-.casehdr{grid-column:1 / -1;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:0 1px 2px rgba(60,52,38,.10)}
+.casehdr{grid-column:1 / -1;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:9px 13px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow-sm)}
 .casehdr .idline{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-family:var(--mono);font-size:9.5px;color:var(--faint)}
 .casehdr .counter{font-size:12px;font-weight:600;color:var(--txt);letter-spacing:.2px}
 .casehdr .cid{background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:2px 7px;color:var(--dim);user-select:all}
@@ -118,6 +121,10 @@ svg{display:block}
 .stab td.diag{font-size:10px;color:var(--dim);line-height:1.35}
 .stab td.na{color:var(--faint);font-family:var(--mono);text-align:center}
 .v2note{flex:0 0 auto;font-family:var(--mono);font-size:9px;color:var(--faint);margin-top:5px;line-height:1.35}
+/* firma del sesgo · curva Δ por etapa (integrado desde v3) */
+.v2sig{flex:0 0 auto;margin-top:8px;padding:6px 8px;background:var(--panel2);border:1px solid var(--line2);border-radius:8px}
+.v2sig .slab{font-family:var(--mono);font-size:8.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+.v2sig svg{width:100%;height:88px}
 
 /* V3 */
 .embsvg{flex:1;min-height:0;width:100%;height:100%;cursor:grab;touch-action:none}
@@ -180,12 +187,12 @@ svg{display:block}
 .verdict b{color:var(--txt)}
 
 /* tooltip + panel de etapa */
-.tip{position:fixed;pointer-events:none;z-index:60;opacity:0;transition:opacity .1s;background:#fbfaf6;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:10px;max-width:250px;box-shadow:0 8px 24px rgba(60,55,45,.18)}
+.tip{position:fixed;pointer-events:none;z-index:60;opacity:0;transition:opacity .1s;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:var(--mono);font-size:10px;max-width:250px;box-shadow:0 8px 24px rgba(0,0,0,.10),0 2px 6px rgba(0,0,0,.06)}
 .tip .tt{font-family:var(--sans);font-weight:600;font-size:11px;margin-bottom:3px;color:var(--txt)}
 .tip .kv{display:flex;justify-content:space-between;gap:12px;color:var(--dim)}.tip .kv b{color:var(--txt);font-weight:500}
-.backdrop{position:fixed;inset:0;background:rgba(40,36,28,.28);z-index:80;display:none}
+.backdrop{position:fixed;inset:0;background:rgba(24,24,27,.35);z-index:80;display:none;backdrop-filter:blur(2px)}
 .backdrop.show{display:block}
-.stagepanel{position:fixed;z-index:81;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:0 18px 50px rgba(40,36,28,.3);padding:16px 18px;display:none}
+.stagepanel{position:fixed;z-index:81;top:50%;left:50%;transform:translate(-50%,-50%);width:min(440px,92vw);background:var(--panel);border:1px solid var(--line);border-radius:13px;box-shadow:0 20px 60px rgba(0,0,0,.15),0 6px 20px rgba(0,0,0,.08);padding:16px 18px;display:none}
 .stagepanel.show{display:block}
 .stagepanel h3{margin:0 0 2px;font-size:15px}
 .stagepanel .pmeta{font-family:var(--mono);font-size:9px;color:var(--faint);margin-bottom:12px}
@@ -207,7 +214,7 @@ svg{display:block}
 .mth .thr span{font-family:var(--mono);font-size:9.5px;background:var(--panel2);border:1px solid var(--line2);border-radius:5px;padding:3px 7px;color:var(--dim)}
 .mth .thr b{color:var(--txt)}
 /* celda de impacto exactamente 0 / por debajo del umbral de inactividad */
-.stab td.zero{font-family:var(--mono);text-align:center;background:repeating-linear-gradient(45deg,#f2efe6,#f2efe6 4px,#e8e4d9 4px,#e8e4d9 8px);color:#8a5a12;font-weight:600;border-radius:4px}
+.stab td.zero{font-family:var(--mono);text-align:center;background:repeating-linear-gradient(45deg,#FEF3C7,#FEF3C7 4px,#FDE68A 4px,#FDE68A 8px);color:#78350F;font-weight:600;border-radius:4px}
 
 /* V6 atención del encoder temporal */
 .card.v6 .body{flex:1;min-height:0;display:flex;flex-direction:column;gap:6px}
@@ -287,13 +294,22 @@ svg{display:block}
     <div class="body">
       <div class="stab" id="stageTable"></div>
       <div class="v2note" id="v2note"></div>
+      <div class="v2sig">
+        <div class="slab">Firma del sesgo · perfil Δ (texto − ECG) por etapa</div>
+        <svg id="v2sigSvg" viewBox="0 0 680 90" preserveAspectRatio="none"></svg>
+      </div>
     </div>
   </div>
 
   <!-- V3 -->
   <div class="card v3">
-    <div class="head"><span class="vtag">V3</span><h2>Espacio latente texto↔ECG</h2></div>
-    <div class="sub">Proyección 2D (PCA). Flechas = desplazamiento original→contrafactual.</div>
+    <div class="head"><span class="vtag">V3</span><h2>Espacio latente texto↔ECG</h2>
+      <div class="sp">
+        <button class="btn on" id="v3ModePCA">Proyección PCA</button>
+        <button class="btn" id="v3ModeCS">Similitud coseno</button>
+      </div>
+    </div>
+    <div class="sub" id="v3sub">Proyección 2D (PCA). Flechas = desplazamiento original→contrafactual.</div>
     <div class="body">
       <svg class="embsvg" id="emb"></svg>
       <div class="v3empty" id="embEmpty" style="display:none"></div>
@@ -390,8 +406,8 @@ let THR={inactive:0.015,margin:0.08};
 
 function stageTone(st){if(!st)return "bal";if(st.impact_text==null)return st.impact_ecg==null?"na":"ecg";
   const d=st.delta_text_ecg;if(d==null)return "bal";if(d>THR.margin)return "text";if(d<-THR.margin)return "ecg";return "bal";}
-const TONE_COL={text:"var(--text-mod)",ecg:"var(--sig-mod)",bal:"var(--neutral)",na:"#c4c0b5"};
-const TONE_FILL={text:"#f7e7cf",ecg:"#d6ecee",bal:"#e7e9ec",na:"#ece9e1"};
+const TONE_COL={text:"var(--text-mod)",ecg:"var(--sig-mod)",bal:"var(--neutral)",na:"#D4D4D8"};
+const TONE_FILL={text:"#FEF3C7",ecg:"#CCFBF1",bal:"#F4F4F5",na:"#F9F9FB"};
 function clsColor(c){return c==="TEXT_DOMINANT"?"var(--text-mod)":c==="ECG_DOMINANT"?"var(--ecg-blue)":c==="INSENSITIVE"?"var(--warn)":c==="BALANCED"?"var(--neutral)":"var(--faint)";}
 function clsFill(c){return c==="TEXT_DOMINANT"?"#fbe7e5":c==="ECG_DOMINANT"?"#e6f0f8":c==="INSENSITIVE"?"#fbf1d8":"#eef0f2";}
 // Escala clara→oscura: un impacto de 0 debe LEERSE como bajo. (Antes se usaba inferno,
@@ -491,7 +507,7 @@ let CLASSES=["TEXT_DOMINANT","ECG_DOMINANT","BALANCED","INSENSITIVE","UNCLEAR"];
 let MODE="internal",METRIC="cosine",AMPLIF=null,VIZNOTE=null;
 const state={selId:CASES[0].case_id,scenario:"original",
   filters:{dominance:"todos",behavior:"todos",qtype:"todos",attr:"todos",level:"todos"},
-  v4word:null,occSel:null,anim:{step:0,timer:null}};
+  v4word:null,occSel:null,anim:{step:0,timer:null},v3mode:"pca"};
 
 function scope(){const f=state.filters;return CASES.filter(c=>{
   if(f.dominance!=="todos"&&c.case_dominance!==f.dominance)return false;
@@ -714,6 +730,48 @@ function renderStageTable(){const c=selCase(),scn=SCN(state.scenario),host=d3.se
     :` El escenario «${scn.label}» no tiene distancias por etapa propias; se muestran las sondas canónicas Text-CF / ECG-CF.`;
   d3.select("#v2note").html(note);}
 
+/* =================== V2 · firma del sesgo (curva Δ) ===================
+   Perfil de la diferencia texto-ECG por etapa: forma que revela DÓNDE se
+   manifiesta y se amplifica el desbalance. Complementa la tabla V2. */
+function renderProfileSig(){
+  const c=selCase(),svg=d3.select("#v2sigSvg");svg.selectAll("*").remove();
+  const W=680,H=90,x0=70,x1=620,yB=54,pad=16;
+  const stg=STAGES.map(s=>s[0]);
+  const lbl=["encoder","proyector","fusión","LLM","salida"];
+  const xs=stg.map((_,i)=>x0+i*(x1-x0)/(stg.length-1));
+  const deltas=stg.map(k=>{const st=c.stages[k];return st&&st.delta_text_ecg!=null?st.delta_text_ecg:null;});
+  const maxAbs=Math.max(0.02,...deltas.filter(d=>d!=null).map(d=>Math.abs(d)));
+  svg.append("line").attr("x1",x0-14).attr("x2",x1+14).attr("y1",yB).attr("y2",yB)
+    .attr("stroke","var(--line)").attr("stroke-width",1);
+  svg.append("text").attr("x",x0-18).attr("y",yB+3).attr("text-anchor","end")
+    .attr("font-family","var(--mono)").attr("font-size",8.5).attr("fill","var(--faint)").text("Δ=0");
+  let pts=[],dots="",lbls="",na="";
+  stg.forEach((k,i)=>{
+    const d=deltas[i],x=xs[i];
+    lbls+=`<text x="${x}" y="${H-4}" text-anchor="middle" font-size="9" fill="var(--faint)" font-family="var(--mono)">${lbl[i]}</text>`;
+    if(d==null){
+      na+=`<text x="${x}" y="${yB-6}" text-anchor="middle" font-size="8.5" fill="var(--faint)" font-family="var(--mono)">n/d</text>`;
+      dots+=`<circle cx="${x}" cy="${yB}" r="2.6" fill="var(--faint)"/>`;return;
+    }
+    const y=yB-(d/maxAbs)*(yB-pad)*0.75;
+    pts.push([x,y]);
+    const col=d>0.01?"var(--text-mod)":d<-0.01?"var(--sig-mod)":"var(--neutral)";
+    dots+=`<circle cx="${x}" cy="${y}" r="3.8" fill="${col}"/>`;
+  });
+  let line="",area="";
+  if(pts.length>1){
+    line=pts.map((p,i)=>(i?"L":"M")+p[0]+" "+p[1]).join(" ");
+    area=`M${pts[0][0]} ${yB} `+pts.map(p=>`L${p[0]} ${p[1]}`).join(" ")+` L${pts[pts.length-1][0]} ${yB} Z`;
+  }
+  const posAny=deltas.some(d=>d!=null&&d>0.01), negAny=deltas.some(d=>d!=null&&d<-0.01);
+  const stroke=posAny&&!negAny?"var(--text-mod)":negAny&&!posAny?"var(--sig-mod)":"var(--neutral)";
+  const fc    =posAny&&!negAny?"rgba(180,83,9,.10)":negAny&&!posAny?"rgba(15,118,110,.10)":"rgba(113,113,122,.06)";
+  const g=svg.append("g");
+  g.html((area?`<path d="${area}" fill="${fc}"/>`:"")+
+         (line?`<path d="${line}" fill="none" stroke="${stroke}" stroke-width="2"/>`:"")+
+         dots+lbls+na);
+}
+
 /* =================== V3 · espacio latente =================== */
 function renderEmb(){const c=selCase(),scn=SCN(state.scenario),svg=d3.select("#emb"),empty=d3.select("#embEmpty"),leg=d3.select("#embLegend");
   svg.selectAll("*").remove();
@@ -749,6 +807,61 @@ function renderEmb(){const c=selCase(),scn=SCN(state.scenario),svg=d3.select("#e
   leg.html("");
   [["var(--text-mod)","tokens pregunta"],["#c99a2e","opciones"],["var(--sig-mod)","ECG original"],["var(--ecg-blue)","ECG perturbado"]].forEach(([col,t])=>{const it=leg.append("div").attr("class","it");it.append("span").attr("class","dot").style("background",col);it.append("span").text(t);});
   leg.append("div").attr("class","it").style("flex-basis","100%").style("color","var(--faint)").text("Arrastra = mover · rueda = zoom · doble clic = reiniciar. Flechas: ECG y pregunta original→contrafactual.");}
+
+/* =================== V3 alterno · matriz de similitud coseno ===================
+   Reemplaza la proyección PCA cuando el usuario lo pide. No distorsiona geometría:
+   muestra directamente la relación coseno entre tokens de texto y de ECG. */
+function renderEmbCS(){
+  const c=selCase(),svg=d3.select("#emb"),empty=d3.select("#embEmpty"),leg=d3.select("#embLegend");
+  svg.selectAll("*").remove();
+  if(!c.latent||!c.latent.points||!c.latent.points.length){
+    svg.style("display","none");leg.html("");
+    empty.style("display","flex").text("Sin tokens latentes para este caso.");return;}
+  svg.style("display","block");empty.style("display","none");
+  const pts=c.latent.points;
+  const rows=pts.filter(p=>p.kind==="texto"||p.kind==="opcion").slice(0,10);
+  const cols=pts.filter(p=>p.kind==="ecg_orig"||p.kind==="ecg_pert").slice(0,14);
+  if(!rows.length||!cols.length){
+    svg.style("display","none");leg.html("");
+    empty.style("display","flex").text("Faltan tokens de una de las modalidades para calcular similitudes.");return;}
+  const cs=(a,b)=>{const dot=a.x*b.x+a.y*b.y;const na=Math.hypot(a.x,a.y)||1e-9,nb=Math.hypot(b.x,b.y)||1e-9;return dot/(na*nb);};
+  const M=rows.map(r=>cols.map(c=>cs(r,c)));
+  const [W,H]=dims(svg);
+  const padL=Math.min(120,W*0.22),padT=44,padR=14,padB=14;
+  const cellW=(W-padL-padR)/cols.length, cellH=(H-padT-padB)/rows.length, cell=Math.min(cellW,cellH);
+  svg.append("text").attr("x",padL).attr("y",22).attr("font-family","var(--sans)")
+    .attr("font-size",11).attr("font-weight",600).attr("fill","var(--txt)")
+    .text(`Matriz ${rows.length} × ${cols.length}  ·  ámbar = coseno positivo, teal = negativo`);
+  // headers columnas
+  cols.forEach((cc,j)=>{
+    svg.append("text").attr("x",padL+j*cell+cell/2).attr("y",padT-6).attr("text-anchor","middle")
+      .attr("font-family","var(--mono)").attr("font-size",8).attr("fill","var(--faint)")
+      .text(String(cc.label||("E"+j)).slice(0,7));
+  });
+  rows.forEach((rr,i)=>{
+    svg.append("text").attr("x",padL-6).attr("y",padT+i*cell+cell/2+3).attr("text-anchor","end")
+      .attr("font-family","var(--mono)").attr("font-size",9).attr("fill","var(--faint)")
+      .text(String(rr.label||("T"+i)).slice(0,14));
+    cols.forEach((cc,j)=>{
+      const v=M[i][j],a=Math.min(Math.abs(v),1);
+      const fill=v>=0?`rgba(180,83,9,${(a*0.65+0.05).toFixed(2)})`:`rgba(15,118,110,${(a*0.65+0.05).toFixed(2)})`;
+      svg.append("rect").attr("x",padL+j*cell).attr("y",padT+i*cell)
+        .attr("width",cell-1).attr("height",cell-1).attr("rx",2).attr("fill",fill)
+        .attr("stroke","var(--line2)").attr("stroke-width",.5)
+        .style("cursor","pointer")
+        .on("mousemove",ev=>showTip(ev,
+          `<div class="tt">${rr.label} ↔ ${cc.label}</div>`+
+          `<div class="kv"><span>coseno</span><b>${v.toFixed(3)}</b></div>`+
+          `<div class="kv"><span>ángulo</span><b>${(Math.acos(Math.max(-1,Math.min(1,v)))*180/Math.PI).toFixed(1)}°</b></div>`))
+        .on("mouseleave",hideTip);
+    });
+  });
+  leg.html("");
+  [["#B45309","texto ↔ ECG (positivo)"],["#0F766E","texto ↔ ECG (negativo)"]].forEach(([col,t])=>{
+    const it=leg.append("div").attr("class","it");it.append("span").attr("class","dot").style("background",col);it.append("span").text(t);});
+  leg.append("div").attr("class","it").style("flex-basis","100%").style("color","var(--faint)")
+    .text("La matriz no proyecta: muestra la relación cruda coseno entre tokens · más honesta que PCA para representaciones no lineales.");
+}
 
 /* =================== V4 · comparación contrafactual local =================== */
 function diffWords(orig,mod){const ow=new Set(norm(orig).split(" "));
@@ -825,6 +938,18 @@ function renderOccStrip(){const c=selCase(),host=d3.select("#occStrip"),ws=occWi
   if(state.occSel!=null&&ws[state.occSel]){const iv=ws[state.occSel];
     sum.append("div").style("margin-top","4px").style("color","var(--txt)")
       .html(`Ventana ${state.occSel+1} seleccionada · <b>${na(c.prediction_original)}</b> → <b>${na(iv.answer)}</b> · ${iv.detail||""}`);}}
+/* Segmentos clínicos P/QRS/ST/T posicionados como fracciones del registro completo.
+   El segmento requerido por la pregunta se destaca con ★ (Molnar §4.6, contrastivo). */
+const CLIN_SEGS=[["P",.08,.20,"#93C5FD"],["QRS",.30,.42,"#C4B5FD"],
+                 ["ST",.46,.62,"#FCD34D"],["T",.62,.84,"#5EEAD4"]];
+function reqSegFromQuestion(q){
+  const t=String(q||"").toLowerCase();
+  if(/ritmo|frecuen|taquic|bradic|latid|onda t\b/.test(t)) return 3;
+  if(/qrs|bloqueo|conducci/.test(t))               return 1;
+  if(/\bst\b|isquem|infart|elevac|depresi/.test(t)) return 2;
+  if(/onda p\b|auric/.test(t))                     return 0;
+  return -1;
+}
 function renderV4Sig(c,scn){const svg=d3.select("#cflSig"),sigLab=d3.select("#cflSigLab"),leg=d3.select("#cflLegend"),ansH=d3.select("#cflSigAns");
   svg.selectAll("*").remove();ansH.html("");
   const sig=c.sig;if(!sig||!sig.arr){leg.text("Onda ECG no disponible.");return;}
@@ -834,6 +959,17 @@ function renderV4Sig(c,scn){const svg=d3.select("#cflSig"),sigLab=d3.select("#cf
   const allv=isEcg&&sig.arr_cf?sig.arr.concat(sig.arr_cf):sig.arr;
   const y=d3.scaleLinear().domain(d3.extent(allv)).range([H-M.b,M.t]);
   const nP=sig.featPatch?sig.featPatch.length:0,pw=nP?(W-M.r-M.l)/nP:0;
+  // Bandas de segmentos clínicos + estrella en el segmento requerido por la pregunta.
+  const reqIdx=reqSegFromQuestion(c.question),N=sig.arr.length-1;
+  CLIN_SEGS.forEach(([lab,a,b,col],idx)=>{
+    const xA=x(a*N),xB=x(b*N),emph=idx===reqIdx;
+    svg.append("rect").attr("x",xA).attr("y",M.t).attr("width",Math.max(1,xB-xA)).attr("height",H-M.b-M.t)
+      .attr("fill",col).attr("opacity",emph?.24:.10).style("pointer-events","none");
+    svg.append("text").attr("x",(xA+xB)/2).attr("y",M.t+9).attr("text-anchor","middle")
+      .attr("font-family","var(--mono)").attr("font-size",9).attr("font-weight",600)
+      .attr("fill",emph?"var(--warn)":"var(--faint)").style("pointer-events","none")
+      .text(lab+(emph?" ★":""));
+  });
   // pesos (relevancia) por segmento ECG: tinte + hover con el valor.
   for(let p=0;p<nP;p++)svg.append("rect").attr("x",M.l+p*pw).attr("y",M.t).attr("width",pw).attr("height",H-M.b-M.t)
     .attr("fill",heat(sig.featPatch[p])).attr("opacity",.12+sig.featPatch[p]*0.34).style("cursor","pointer")
@@ -989,13 +1125,23 @@ function resetAnim(){stopAnim();state.anim.step=0;renderFlow();animExplain();}
 d3.select("#animPlay").on("click",()=>{if(state.anim.timer)stopAnim();else startAnim();});
 d3.select("#animReset").on("click",resetAnim);
 d3.select("#methodBtn").on("click",openMethodPanel);
+d3.select("#v3ModePCA").on("click",()=>{state.v3mode="pca";
+  d3.select("#v3ModePCA").classed("on",true);d3.select("#v3ModeCS").classed("on",false);
+  d3.select("#v3sub").text("Proyección 2D (PCA). Flechas = desplazamiento original→contrafactual.");
+  renderAll();});
+d3.select("#v3ModeCS").on("click",()=>{state.v3mode="cs";
+  d3.select("#v3ModeCS").classed("on",true);d3.select("#v3ModePCA").classed("on",false);
+  d3.select("#v3sub").text("Matriz de similitud coseno entre tokens de texto y de ECG. Reemplazo honesto de PCA en representaciones no lineales.");
+  renderAll();});
 
 /* =================== global =================== */
 function renderAll(){const c=selCase(),scn=SCN(state.scenario);
   d3.select("#v1chip").attr("class","scnchip "+scn.cls).text(scn.label);
   renderCaseHdr();
   renderScenarioBar();renderFlow();animExplain();
-  renderStageTable();renderEmb();renderV4();renderQA();renderAttention();renderSidebar();renderCaseTable();}
+  renderStageTable();renderProfileSig();
+  if(state.v3mode==="cs") renderEmbCS(); else renderEmb();
+  renderV4();renderQA();renderAttention();renderSidebar();renderCaseTable();}
 function navTo(delta){const sc=scope();if(!sc.length)return;let i=sc.findIndex(s=>s.case_id===state.selId);if(i<0)i=0;i=(i+delta+sc.length)%sc.length;state.selId=sc[i].case_id;state.v4word=null;state.occSel=null;resetAnim();renderAll();}
 d3.select("#prevS").on("click",()=>navTo(-1));
 d3.select("#nextS").on("click",()=>navTo(1));

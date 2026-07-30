@@ -55,6 +55,7 @@ def load_checkpoint(model_path: str | Path, quantized: bool = True, device: str 
         temporal_num_layers=config.get("temporal_num_layers", 1),
         query_init_std=config.get("query_init_std", 0.02),
         match_embedding_scale=config.get("match_embedding_scale", False),
+        projector_kind=config.get("projector_kind", "mlp"),
     )
     device = model.input_device
     model.time_series_encoder.load_state_dict(torch.load(root / "ts_encoder.pt", map_location="cpu"))

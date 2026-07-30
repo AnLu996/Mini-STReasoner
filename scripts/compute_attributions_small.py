@@ -146,7 +146,7 @@ def main() -> None:
             # ---- gradient saliency (ECG series + text-token embeddings) ----
             series = signal_tensor(signal).requires_grad_(True)
             text_embeds = embed(input_ids).detach().clone().requires_grad_(True)
-            temporal_tokens, _ = model.time_series_encoder(series)
+            temporal_tokens, _, _ = model.time_series_encoder(series)
             temporal_embeds = model.temporal_projector(temporal_tokens).to(text_embeds.dtype)
             temporal_mask = torch.ones(temporal_embeds.shape[:2], dtype=attention_mask.dtype, device=device)
             inputs_embeds = torch.cat([temporal_embeds, text_embeds], dim=1)
@@ -174,7 +174,7 @@ def main() -> None:
                 tok_words = [t["w"] for t in token_saliency]
 
                 def projected(sig_tensor):
-                    tt, _ = model.time_series_encoder(sig_tensor)
+                    tt, _, _ = model.time_series_encoder(sig_tensor)
                     return model.temporal_projector(tt)[0].float().cpu().numpy(), tt[0].float().cpu().numpy()
 
                 proj_full, pre_full = projected(series.detach())

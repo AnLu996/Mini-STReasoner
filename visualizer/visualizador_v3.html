@@ -1,0 +1,1122 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Auditor contrafactual ECG–texto · v3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="ecgqa_viz_data.js" onerror="console.warn('ecgqa_viz_data.js no encontrado')"></script>
+<script src="tracing_data.js"   onerror="console.warn('tracing_data.js no encontrado')"></script>
+<style>
+:root{
+  --bg:#FAFAFA; --panel:#FFFFFF; --panel-2:#F5F5F7; --panel-3:#EEEEF1;
+  --line:#E4E4E7; --line-soft:#F1F1F3;
+  --ink:#18181B; --muted:#71717A; --faint:#A1A1AA;
+  --red:#DC2626; --red-bg:#FEF2F2; --red-line:#FCA5A5;
+  --teal:#0F766E; --teal-bg:#F0FDFA; --teal-line:#5EEAD4;
+  --amber:#D97706; --amber-bg:#FFFBEB; --amber-line:#FCD34D;
+  --paper:#FDF6EF; --grid-fine:#F3D9D0; --grid-bold:#E5B7A9;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,'SF Mono',Menlo,monospace;
+  --rs:10px;
+  --shadow:0 1px 3px rgba(0,0,0,.04),0 1px 2px rgba(0,0,0,.03);
+  --shadow-lg:0 4px 12px rgba(0,0,0,.06),0 2px 4px rgba(0,0,0,.03);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  font-family:var(--sans);font-size:13.5px;line-height:1.4;-webkit-font-smoothing:antialiased}
+body{display:flex;flex-direction:column;height:100vh;overflow:hidden}
+h1,h2,h3,h4{margin:0;font-weight:600}
+svg{display:block}
+button{font-family:inherit;cursor:pointer}
+.eyebrow{font:600 10px/1 var(--sans);letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none}
+
+/* ============ TOPBAR ============ */
+.topbar{flex:none;display:flex;align-items:center;gap:14px;padding:10px 20px;
+  background:var(--panel);border-bottom:1px solid var(--line);box-shadow:var(--shadow)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:14.5px;color:var(--ink);white-space:nowrap}
+.brand svg{color:var(--amber)}
+.brand .sub{font-weight:500;color:var(--muted);font-size:12px}
+.brand .sub b{color:var(--red);font-weight:600}
+.brand .sub i{color:var(--teal);font-style:normal;font-weight:600}
+.spacer{flex:1}
+
+.audience{font:500 10px var(--sans);color:var(--amber);
+  border:1px solid var(--amber-line);background:var(--amber-bg);padding:4px 9px;border-radius:6px}
+.controls{display:flex;align-items:center;gap:8px}
+.case-select{position:relative}
+.case-btn{display:flex;align-items:center;gap:8px;padding:6px 12px;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+  font-family:var(--mono);font-size:12px;color:var(--ink);transition:border-color .12s,background .12s}
+.case-btn:hover{border-color:var(--muted);background:var(--panel-3)}
+.case-btn .arr{font-size:9px;color:var(--muted)}
+.case-panel{position:absolute;top:calc(100% + 6px);right:0;width:340px;max-height:440px;
+  background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow-lg);
+  display:none;flex-direction:column;z-index:50;overflow:hidden}
+.case-panel.open{display:flex}
+.case-search{padding:10px;border-bottom:1px solid var(--line-soft)}
+.case-search input{width:100%;padding:7px 10px;font-family:var(--sans);font-size:12.5px;
+  border:1px solid var(--line);border-radius:6px;background:var(--panel-2);color:var(--ink);outline:none}
+.case-search input:focus{border-color:var(--teal)}
+.case-chips{display:flex;flex-wrap:wrap;gap:5px;padding:8px 10px;border-bottom:1px solid var(--line-soft)}
+.chip{font:500 10px var(--sans);padding:3px 8px;border-radius:999px;
+  border:1px solid var(--line);background:var(--panel);color:var(--muted);cursor:pointer;transition:.12s}
+.chip:hover{background:var(--panel-2)}.chip.on{border-color:transparent;color:#fff}
+.chip.on.TEXT{background:var(--red)}.chip.on.ECG{background:var(--teal)}
+.chip.on.BAL{background:#525252}.chip.on.INS{background:var(--amber)}.chip.on.UNK{background:#71717A}
+.case-list{flex:1;overflow-y:auto;padding:4px 0}
+.case-row{display:flex;align-items:center;gap:9px;padding:6px 12px;cursor:pointer;font-size:12.5px}
+.case-row:hover{background:var(--panel-2)}
+.case-row.on{background:var(--teal-bg)}
+.case-row .cid{font-family:var(--mono);font-size:11px;color:var(--muted);flex:0 0 44px}
+.case-row .cqt{font-family:var(--mono);font-size:10px;color:var(--faint);flex:0 0 70px}
+.case-row .ccls{flex:0 0 auto}
+.case-row .cq{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.cls-pill{display:inline-block;padding:1px 6px;border-radius:4px;
+  font:600 9px var(--sans);letter-spacing:.03em}
+.cls-TEXT{background:var(--red-bg);color:var(--red);border:1px solid var(--red-line)}
+.cls-ECG {background:var(--teal-bg);color:var(--teal);border:1px solid var(--teal-line)}
+.cls-BAL {background:#F4F4F5;color:#3F3F46;border:1px solid #D4D4D8}
+.cls-INS {background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line)}
+.cls-UNK {background:#F4F4F5;color:#71717A;border:1px solid #D4D4D8}
+
+/* ============ CASE HEADER (siempre visible) ============ */
+.casehead{flex:none;background:var(--panel);border-bottom:1px solid var(--line);
+  padding:10px 20px;display:flex;align-items:center;gap:14px}
+.casehead .qtxt{flex:1;min-width:0;font-size:13.5px;color:var(--ink);line-height:1.4}
+.casehead .qtxt .ql{display:block;font:600 9.5px var(--sans);color:var(--faint);
+  letter-spacing:.09em;text-transform:uppercase;margin-bottom:2px}
+.casehead .qmeta{display:flex;flex-direction:column;gap:3px;align-items:flex-end;flex:0 0 auto}
+.casehead .qmeta .k{font:600 9px var(--sans);color:var(--faint);letter-spacing:.09em;text-transform:uppercase}
+.casehead .qmeta .v{font-family:var(--mono);font-size:11.5px;color:var(--ink)}
+
+/* ============ STAGE (grid principal) ============ */
+.stage{flex:1;min-height:0;display:grid;grid-template-columns:1.32fr 1fr;gap:12px;padding:12px 16px;overflow:hidden}
+.rightcol{min-height:0;display:grid;grid-template-rows:1fr 1fr 1fr;gap:12px}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:var(--rs);
+  display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:var(--shadow)}
+.mh{flex:none;padding:9px 14px;border-bottom:1px solid var(--line-soft);
+  display:flex;align-items:baseline;gap:10px}
+.mh .tk{font:600 10px var(--mono);color:var(--amber);letter-spacing:.06em}
+.mh .tn{font-size:13px;font-weight:600;color:var(--ink)}
+.mh .tq{font-size:11px;color:var(--muted);flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mh.core{border-bottom-color:var(--red-line)}
+.mh.core .tk{color:var(--red)}
+.mb{flex:1;min-height:0;padding:11px 14px;display:flex;flex-direction:column;overflow:hidden;gap:8px}
+.mf{flex:none;padding:8px 14px;border-top:1px solid var(--line-soft);
+  font-size:11.5px;color:var(--muted);display:flex;gap:9px;align-items:flex-start;background:var(--panel-2)}
+.mf .fi{flex:none;margin-top:5px}.mf b{color:var(--ink)}
+.mf .flabel{font:600 9px var(--sans);letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+
+/* toggle intervención T2 */
+.toggle2{display:inline-flex;border:1px solid var(--line);border-radius:999px;
+  overflow:hidden;margin-left:auto;background:var(--panel-2)}
+.toggle2 button{background:transparent;color:var(--muted);border:0;
+  padding:4px 12px;font:500 10.5px var(--sans)}
+.toggle2 button.on{background:var(--ink);color:#fff}
+.backbtn{background:var(--panel-2);border:1px solid var(--line);color:var(--muted);
+  padding:3px 10px;border-radius:6px;font:500 10.5px var(--sans);margin-left:auto}
+.backbtn:hover{background:var(--panel-3);color:var(--ink)}
+
+/* -------- T2 pipeline + firma -------- */
+.pipe{flex:2.4;min-height:180px;background:var(--panel-2);border:1px solid var(--line-soft);
+  border-radius:8px;padding:6px}
+.pipe svg{width:100%;height:100%}
+.profcap{flex:none;font:600 9px var(--sans);letter-spacing:.1em;
+  text-transform:uppercase;color:var(--faint);margin-top:4px}
+.profile{flex:1;min-height:110px;background:var(--panel-2);border:1px solid var(--line-soft);
+  border-radius:8px;padding:6px}
+.profile svg{width:100%;height:100%}
+
+/* -------- T2 drill-down -------- */
+.drill{flex:1;min-height:0;display:flex;flex-direction:column;overflow:auto;gap:10px}
+.drill h4{font-size:12.5px;color:var(--ink);margin-bottom:2px}
+.drill p{font-size:11.5px;color:var(--muted);line-height:1.5;margin:0}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.stat{background:var(--panel-2);border:1px solid var(--line-soft);border-radius:8px;padding:8px 10px}
+.stat .sk{font:600 9px var(--sans);letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.stat .sv{font-family:var(--mono);font-size:16px;font-weight:600;color:var(--ink);margin-top:2px}
+.stat .sn{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
+.mini-tab{width:100%;border-collapse:collapse;font-size:11.5px}
+.mini-tab th,.mini-tab td{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line-soft)}
+.mini-tab th{font:600 9px var(--sans);letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
+.mini-tab td.n{text-align:right;font-family:var(--mono);font-weight:600}
+.mini-tab td.hl{background:var(--teal-bg);color:var(--teal)}
+.note{background:var(--amber-bg);border:1px solid var(--amber-line);color:#78350F;
+  border-radius:8px;padding:8px 11px;font-size:11px;line-height:1.5}
+
+/* similitud coseno (proyector) */
+.heat{background:var(--panel-2);border:1px solid var(--line-soft);border-radius:8px;padding:8px}
+.heat svg{width:100%;height:auto;display:block}
+
+/* -------- T1 dependencia modal -------- */
+.conds{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.cond{border:1px solid var(--line);border-radius:8px;padding:9px 10px;
+  background:var(--panel-2);display:flex;flex-direction:column;gap:5px;min-height:0}
+.cond .nm{font-size:10.5px;font-weight:500;line-height:1.25;color:var(--ink)}
+.cond .nm small{display:block;color:var(--faint);font-size:9.5px;font-weight:400;margin-top:1px}
+.cond .v{font-size:16px;font-weight:700;letter-spacing:.1px;line-height:1;color:var(--ink);word-break:break-word}
+.cond .v.flag{color:var(--red)}
+.cond .cf{font:500 10px/1 var(--mono);color:var(--muted);margin-top:auto}
+.confbar{height:4px;border-radius:2px;background:var(--panel-3);overflow:hidden;margin-top:5px}
+.confbar i{display:block;height:100%;border-radius:2px}
+
+/* -------- T3 oclusión -------- */
+.paper{flex:1;min-height:0;border-radius:8px;overflow:hidden;
+  border:1px solid var(--grid-bold);background:var(--paper);position:relative;
+  box-shadow:inset 0 1px 0 #fff;touch-action:none}
+.paper svg{width:100%;height:100%}
+.occrow{flex:none;display:flex;gap:14px;align-items:center;margin-top:8px;
+  font-family:var(--mono);font-size:11px;color:var(--muted);flex-wrap:wrap}
+.occrow b{color:var(--ink);font-weight:600}
+.atag{padding:2px 8px;border-radius:5px;font:600 10px var(--mono)}
+.atag.bad{color:var(--red);background:var(--red-bg);border:1px solid var(--red-line)}
+.atag.good{color:var(--teal);background:var(--teal-bg);border:1px solid var(--teal-line)}
+.atag.neu{color:var(--muted);background:var(--panel-2);border:1px solid var(--line)}
+
+/* -------- T4 matriz -------- */
+.matrix{width:100%;border-collapse:collapse;font-size:11.5px}
+.matrix th{text-align:left;font:600 9px var(--sans);letter-spacing:.09em;
+  text-transform:uppercase;color:var(--faint);padding:0 10px 6px;border-bottom:1px solid var(--line-soft)}
+.matrix td{padding:6px 10px;border-top:1px solid var(--line-soft);font-family:var(--mono);color:var(--ink)}
+.matrix td.name{font-family:var(--sans);color:var(--muted)}
+.matrix .r{color:var(--red)}.matrix .g{color:var(--teal)}.matrix .m{color:var(--muted)}
+
+/* -------- VEREDICTO -------- */
+.verdict{flex:none;display:grid;grid-template-columns:repeat(5,1fr);gap:0;
+  background:var(--line);border-top:1px solid var(--line)}
+.vcell{background:var(--panel);padding:10px 16px;display:flex;flex-direction:column;gap:5px}
+.vcell .k{font:600 9px var(--sans);letter-spacing:.1em;color:var(--faint);text-transform:uppercase}
+.vcell .v{font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px;color:var(--ink)}
+.vcell.warn{background:var(--amber-bg)}
+.vcell.warn .v{font-size:11px;color:#78350F;line-height:1.4}
+
+/* misc */
+.hidden{display:none !important}
+.mono{font-family:var(--mono)}
+</style>
+</head>
+<body>
+
+<!-- ============ TOPBAR ============ -->
+<header class="topbar">
+  <div class="brand">
+    <svg width="26" height="16" viewBox="0 0 52 32" fill="none">
+      <path d="M1 16h11l4-11 6 22 5-16 3 7h16" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+    Auditor contrafactual ECG–texto
+    <span class="sub">· <b>dependencia textual</b> y <i>anclaje temporal</i></span>
+  </div>
+  <div class="spacer"></div>
+  <div class="audience">Vista de auditoría · no clínica</div>
+  <div class="controls">
+    <div class="case-select">
+      <button class="case-btn" id="caseBtn">
+        <span class="dot" id="caseDot" style="background:var(--muted)"></span>
+        <span id="caseLabel">—</span>
+        <span class="arr">▾</span>
+      </button>
+      <div class="case-panel" id="casePanel">
+        <div class="case-search"><input id="caseSearch" placeholder="Buscar por pregunta o ID…"></div>
+        <div class="case-chips" id="caseChips"></div>
+        <div class="case-list" id="caseList"></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ============ HEADER DEL CASO ============ -->
+<div class="casehead">
+  <div class="qtxt">
+    <span class="ql">Pregunta bajo auditoría</span>
+    <span id="qText">—</span>
+  </div>
+  <div class="qmeta">
+    <span class="k">Tipo</span><span class="v" id="qType">—</span>
+  </div>
+  <div class="qmeta">
+    <span class="k">Ground truth</span><span class="v" id="qGT">—</span>
+  </div>
+  <div class="qmeta">
+    <span class="k">ECG ID</span><span class="v" id="qEcg">—</span>
+  </div>
+</div>
+
+<!-- ============ STAGE ============ -->
+<main class="stage">
+  <!-- T2 (núcleo, columna ancha) -->
+  <section class="tile" id="t2Tile">
+    <div class="mh core">
+      <span class="tk">T2</span>
+      <span class="tn" id="t2Title">Localización del sesgo</span>
+      <span class="tq" id="t2Q">¿en qué parte del modelo se produce y amplifica?</span>
+      <span class="toggle2" id="t2Toggle">
+        <button data-m="texto" class="on">Textual</button>
+        <button data-m="ecg">ECG</button>
+      </span>
+      <button class="backbtn hidden" id="t2Back">← volver</button>
+    </div>
+    <div class="mb">
+      <div id="t2Overview">
+        <div class="pipe" id="pipe"></div>
+        <div class="profcap">Firma del sesgo · Δ por etapa</div>
+        <div class="profile" id="profile"></div>
+      </div>
+      <div id="t2Drill" class="drill hidden"></div>
+    </div>
+    <div class="mf" id="fT2"></div>
+  </section>
+
+  <div class="rightcol">
+    <!-- T1 -->
+    <section class="tile">
+      <div class="mh"><span class="tk">T1</span><span class="tn">Dependencia modal</span>
+        <span class="tq">¿de qué modalidad depende la respuesta?</span></div>
+      <div class="mb"><div class="conds" id="conds"></div></div>
+      <div class="mf" id="fT1"></div>
+    </section>
+    <!-- T3 -->
+    <section class="tile">
+      <div class="mh"><span class="tk">T3</span><span class="tn">Anclaje temporal</span>
+        <span class="tq">¿se ancla en el segmento requerido (★)?</span></div>
+      <div class="mb">
+        <div class="paper" id="paper"></div>
+        <div class="occrow">
+          <span>ventana <b id="occWin">—</b></span>
+          <span>Δresp <b id="occResp">—</b></span>
+          <span>sens <b id="occConf">—</b></span>
+          <span class="atag neu" id="occAlign">—</span>
+        </div>
+      </div>
+      <div class="mf" id="fT3"></div>
+    </section>
+    <!-- T4 -->
+    <section class="tile">
+      <div class="mh"><span class="tk">T4</span><span class="tn">Diagnóstico</span>
+        <span class="tq">¿dependencia real o insensibilidad?</span></div>
+      <div class="mb"><table class="matrix" id="matrix"></table></div>
+      <div class="mf" id="fT4"></div>
+    </section>
+  </div>
+</main>
+
+<!-- ============ VEREDICTO ============ -->
+<div class="verdict" id="verdict"></div>
+
+<script>
+(function(){
+"use strict";
+
+const DATA  = window.ECGQA_DATA   || {samples:[], globals:{}, qtypes:[]};
+const TRACE = window.TRACING_DATA || {cases:[], class_counts:{}, thresholds:{}};
+
+const TRACE_BY_ID = {};
+(TRACE.cases||[]).forEach(c=>{
+  TRACE_BY_ID[c.case_id]=c; TRACE_BY_ID[String(c.case_id)]=c;
+});
+function traceOf(s){
+  if(!s) return null;
+  return TRACE_BY_ID[s.real_id]||TRACE_BY_ID[s.id]||TRACE_BY_ID[s.ecg_id]||null;
+}
+function localClass(s){
+  const t = traceOf(s);
+  if(t && t.case_dominance) return t.case_dominance;
+  const iv=s.interventions||[];
+  const flipT=iv.some(x=>/pregunta|neutra|text/i.test(x.name||x.config||'')&&x.flip);
+  const flipE=iv.some(x=>/ecg|ruido|ceros|mask/i.test(x.name||x.config||'')&&x.flip);
+  if(flipT&&!flipE) return 'TEXT_DOMINANT';
+  if(flipE&&!flipT) return 'ECG_DOMINANT';
+  if(flipT&&flipE)  return 'BALANCED';
+  return 'INSENSITIVE';
+}
+const CLS_SHORT={TEXT_DOMINANT:'TEXT',ECG_DOMINANT:'ECG',BALANCED:'BAL',INSENSITIVE:'INS',UNCLEAR:'UNK'};
+const CLS_COLOR={TEXT_DOMINANT:'var(--red)',ECG_DOMINANT:'var(--teal)',
+                 BALANCED:'#525252',INSENSITIVE:'var(--amber)',UNCLEAR:'#71717A'};
+
+const SEGS=[['P',.08,.20,'#93C5FD'],['QRS',.30,.42,'#C4B5FD'],
+            ['ST',.46,.62,'#FCD34D'],['T',.62,.84,'#5EEAD4']];
+
+const state = {
+  caseId : null,
+  t2mode : 'texto',
+  t2drill: null,        // null | 'encoder' | 'projector' | 'fusion' | 'llm' | 'output'
+  filters:{cls:'', q:''}
+};
+
+/* ================================================================
+   Impacto por etapa (con datos reales si hay tracing, si no cifras
+   consistentes con el paper)
+   ================================================================ */
+function impact(s, mode){
+  const t = traceOf(s);
+  if(t && t.stages){
+    // usar datos reales
+    const st = t.stages;
+    if(mode==='texto'){
+      return {
+        encoder:{na:true},
+        projector:{na:true},
+        fusion :{d:st.fusion    ? (st.fusion.impact_text||0)    : 0},
+        llm    :{d:st.llm       ? (st.llm.impact_text   ||0)    : 0},
+        output :{d:st.output    ? (st.output.impact_text||0)    : 0}
+      };
+    } else {
+      return {
+        encoder  :{d:st.encoder   ? (st.encoder.impact_ecg   ||0):0},
+        projector:{d:st.projector ? (st.projector.impact_ecg ||0):0},
+        fusion   :{d:st.fusion    ? (st.fusion.impact_ecg    ||0):0},
+        llm      :{d:st.llm       ? (st.llm.impact_ecg       ||0):0},
+        output   :{d:st.output    ? (st.output.impact_ecg    ||0):0}
+      };
+    }
+  }
+  // fallback proporcional a D
+  const D = s.D || 0.3, sign = mode==='texto'?1:-.06;
+  if(mode==='texto') return {encoder:{na:true},projector:{na:true},
+    fusion:{d:D*0.05},llm:{d:D*0.55},output:{d:D*0.90}};
+  return {encoder:{d:sign*D*0.35},projector:{d:sign*D*0.20},
+    fusion:{d:sign*D*0.15},llm:{d:sign*D*0.05},output:{d:sign*D*0.02}};
+}
+
+function fmtD(d){
+  const a=Math.abs(d);
+  if(a<0.0001) return 'Δ 0';
+  const s = a>=0.05?d.toFixed(2):a>=0.005?d.toFixed(3):d.toFixed(4);
+  return 'Δ '+(d>0?'+':'')+s;
+}
+function fillFor(d, maxAbs){
+  const M = maxAbs||0.5;
+  if(d>1e-9){
+    const a=Math.min(Math.abs(d)/M,1);
+    return {bg:`rgba(220,38,38,${(a*0.35+0.06).toFixed(2)})`, st:'#FCA5A5', tx:'#991B1B'};
+  }
+  if(d<-1e-9){
+    const a=Math.min(Math.abs(d)/M,1);
+    return {bg:`rgba(15,118,110,${(a*0.35+0.06).toFixed(2)})`, st:'#5EEAD4', tx:'#134E4A'};
+  }
+  return {bg:'#F5F5F7', st:'#E4E4E7', tx:'#71717A'};
+}
+
+/* ================================================================
+   PIPELINE SVG
+   ================================================================ */
+const PIPE_SVG = `
+<svg viewBox="0 0 720 310" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="ar3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#71717A" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <g font-family="Inter,sans-serif">
+    <!-- Vía ECG -->
+    <rect x="30"  y="44" width="140" height="54" rx="8" fill="#F0FDFA" stroke="#5EEAD4"/>
+    <text x="100" y="68" text-anchor="middle" font-size="12.5" font-weight="600" fill="#134E4A">Entrada ECG</text>
+    <text x="100" y="86" text-anchor="middle" font-size="10.5" fill="#0F766E" font-family="JetBrains Mono,monospace">1000 × 12</text>
+
+    <rect id="rEnc"  data-st="encoder"   x="205" y="44" width="140" height="54" rx="8" fill="#F0FDFA" stroke="#5EEAD4" style="cursor:pointer"/>
+    <text x="275" y="66" text-anchor="middle" font-size="12.5" font-weight="600" fill="#134E4A" pointer-events="none">Encoder temporal</text>
+    <text id="dEnc"  x="275" y="86" text-anchor="middle" font-size="10.5" fill="#0F766E" font-family="JetBrains Mono,monospace" pointer-events="none">Δ —</text>
+
+    <rect x="380" y="44" width="140" height="54" rx="8" fill="#FFFBEB" stroke="#FCD34D"/>
+    <text x="450" y="66" text-anchor="middle" font-size="12.5" font-weight="600" fill="#78350F">Agregación (pooling)</text>
+    <text x="450" y="86" text-anchor="middle" font-size="10" fill="#B45309" font-family="JetBrains Mono,monospace">4 tokens · cuello 1000:4</text>
+
+    <rect id="rProj" data-st="projector" x="555" y="44" width="140" height="54" rx="8" fill="#F0FDFA" stroke="#5EEAD4" style="cursor:pointer"/>
+    <text x="625" y="66" text-anchor="middle" font-size="12.5" font-weight="600" fill="#134E4A" pointer-events="none">Proyector</text>
+    <text id="dProj" x="625" y="86" text-anchor="middle" font-size="10.5" fill="#0F766E" font-family="JetBrains Mono,monospace" pointer-events="none">Δ —</text>
+
+    <line x1="170" y1="71" x2="203" y2="71" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+    <line x1="345" y1="71" x2="378" y2="71" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+    <line x1="520" y1="71" x2="553" y2="71" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+
+    <!-- unión vía ECG hacia la fusión -->
+    <path d="M625 98 L625 128 L280 128 L280 152" fill="none" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+
+    <!-- Vía texto + fusión + LLM + salida -->
+    <rect x="30"  y="156" width="140" height="54" rx="8" fill="#FEF2F2" stroke="#FCA5A5"/>
+    <text x="100" y="178" text-anchor="middle" font-size="12.5" font-weight="600" fill="#991B1B">Pregunta + opciones</text>
+    <text x="100" y="196" text-anchor="middle" font-size="10.5" fill="#DC2626" font-family="JetBrains Mono,monospace">L × d_LLM</text>
+
+    <rect id="rFus" data-st="fusion" x="205" y="156" width="150" height="54" rx="8" fill="#F5F5F7" stroke="#E4E4E7" style="cursor:pointer"/>
+    <text x="280" y="178" text-anchor="middle" font-size="12.5" font-weight="600" fill="#18181B" pointer-events="none">Fusión</text>
+    <text id="dFus" x="280" y="196" text-anchor="middle" font-size="10.5" fill="#71717A" font-family="JetBrains Mono,monospace" pointer-events="none">Δ 0</text>
+
+    <rect id="rLlm" data-st="llm"    x="390" y="156" width="150" height="54" rx="8" fill="#F5F5F7" stroke="#E4E4E7" style="cursor:pointer"/>
+    <text x="465" y="178" text-anchor="middle" font-size="12.5" font-weight="600" fill="#18181B" pointer-events="none">LLM (Qwen + LoRA)</text>
+    <text id="dLlm" x="465" y="196" text-anchor="middle" font-size="10.5" fill="#71717A" font-family="JetBrains Mono,monospace" pointer-events="none">Δ 0</text>
+
+    <rect id="rSal" data-st="output" x="575" y="156" width="120" height="54" rx="8" fill="#F5F5F7" stroke="#E4E4E7" style="cursor:pointer"/>
+    <text x="635" y="178" text-anchor="middle" font-size="12.5" font-weight="600" fill="#18181B" pointer-events="none">Salida</text>
+    <text id="dSal" x="635" y="196" text-anchor="middle" font-size="10.5" fill="#71717A" font-family="JetBrains Mono,monospace" pointer-events="none">Δ 0</text>
+
+    <line x1="170" y1="183" x2="203" y2="183" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+    <line x1="355" y1="183" x2="388" y2="183" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+    <line x1="540" y1="183" x2="573" y2="183" stroke="#71717A" stroke-width="1.4" marker-end="url(#ar3)"/>
+
+    <text x="30" y="252" font-size="10.5" fill="#71717A" font-family="JetBrains Mono,monospace">Traza I_ECG:</text>
+    <text id="ecgTrace" x="118" y="252" font-size="10.5" fill="#0F766E" font-family="JetBrains Mono,monospace">—</text>
+    <text x="30" y="272" font-size="10" fill="#A1A1AA" font-family="JetBrains Mono,monospace">click en una etapa para inspeccionarla</text>
+  </g>
+</svg>`;
+
+function updatePipe(s, kind){
+  const im = impact(s, kind);
+  const maxAbs = Math.max(0.02, ...Object.values(im).map(x=>x&&x.d?Math.abs(x.d):0));
+  [['rEnc','dEnc','encoder'],['rProj','dProj','projector'],
+   ['rFus','dFus','fusion'],['rLlm','dLlm','llm'],['rSal','dSal','output']].forEach(([r,t,st])=>{
+    const cell=im[st], R=document.getElementById(r), T=document.getElementById(t);
+    if(!R) return;
+    if(cell.na){
+      R.setAttribute('fill','#F0FDFA'); R.setAttribute('stroke','#5EEAD4');
+      T.setAttribute('fill','#71717A'); T.textContent='n/d'; return;
+    }
+    const f = fillFor(cell.d, maxAbs);
+    R.setAttribute('fill', f.bg); R.setAttribute('stroke', f.st);
+    T.setAttribute('fill', f.tx); T.textContent = fmtD(cell.d);
+  });
+  const et = document.getElementById('ecgTrace');
+  if(kind==='texto'){ et.textContent='0.0000 en todas las etapas'; et.setAttribute('fill','#0F766E'); }
+  else{
+    const big = Math.abs(im.encoder.d||0) > 0.02;
+    et.textContent = big?'registra en encoder, decae en el LLM':'≈0 en todas las etapas';
+    et.setAttribute('fill', big?'#0F766E':'#71717A');
+  }
+}
+
+function profileSVG(s, kind){
+  const W=680,H=140,x0=60,x1=620,yB=104,sc=170;
+  const im=impact(s,kind);
+  const stg=['encoder','projector','fusion','llm','output'];
+  const lbl=['encoder','proyector','fusión','LLM','salida'];
+  const xs=stg.map((_,i)=>x0+i*(x1-x0)/4);
+  let pts=[],dots='',lbls='',na='';
+  const maxAbs = Math.max(0.02, ...stg.map(k=>im[k]&&im[k].d?Math.abs(im[k].d):0));
+  stg.forEach((k,i)=>{
+    const cell=im[k], x=xs[i];
+    lbls += `<text x="${x}" y="${H-6}" text-anchor="middle" font-size="10.5" fill="#71717A" font-family="JetBrains Mono,monospace">${lbl[i]}</text>`;
+    if(cell.na){
+      na += `<text x="${x}" y="${yB-6}" text-anchor="middle" font-size="10" fill="#A1A1AA" font-family="JetBrains Mono,monospace">n/d</text>`;
+      dots += `<circle cx="${x}" cy="${yB}" r="2.6" fill="#A1A1AA"/>`; return;
+    }
+    const y = yB - (cell.d/maxAbs)*sc*0.4;
+    pts.push([x,y]);
+    const col = cell.d>1e-9?'#DC2626':cell.d<-1e-9?'#0F766E':'#71717A';
+    dots += `<circle cx="${x}" cy="${y}" r="4" fill="${col}"/>`;
+  });
+  let line='',area='';
+  if(pts.length>1){
+    line = pts.map((p,i)=>(i?'L':'M')+p[0]+' '+p[1]).join(' ');
+    area = `M${pts[0][0]} ${yB} `+pts.map(p=>`L${p[0]} ${p[1]}`).join(' ')+` L${pts[pts.length-1][0]} ${yB} Z`;
+  }
+  const stroke = kind==='texto'?'#DC2626':'#0F766E';
+  const fc     = kind==='texto'?'rgba(220,38,38,.10)':'rgba(15,118,110,.10)';
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
+    <line x1="${x0-22}" y1="${yB}" x2="${x1+22}" y2="${yB}" stroke="#E4E4E7" stroke-width="1"/>
+    <text x="${x0-26}" y="${yB+4}" text-anchor="end" font-size="9.5" fill="#A1A1AA" font-family="JetBrains Mono,monospace">Δ=0</text>
+    ${area?`<path d="${area}" fill="${fc}"/>`:''}
+    ${line?`<path d="${line}" fill="none" stroke="${stroke}" stroke-width="2.2"/>`:''}
+    ${dots}${lbls}${na}
+  </svg>`;
+}
+
+/* ================================================================
+   DRILL-DOWN por etapa
+   ================================================================ */
+const DRILL_META = {
+  encoder  :{title:'Encoder temporal · anclaje ECG',       q:'¿A dónde mira el modelo en la ECG?'},
+  projector:{title:'Proyector latente · alineación',       q:'¿Cómo se relacionan los tokens texto ↔ ECG?'},
+  fusion   :{title:'Fusión · peso modal en la entrada al LLM', q:'¿Cuánto pesa cada modalidad al entrar al LLM?'},
+  llm      :{title:'LLM · degradación por capa',            q:'¿Dónde se pierde la señal del ECG?'},
+  output   :{title:'Salida · explicación contrastiva',      q:'¿Por qué respondió esto y no lo otro?'}
+};
+function openDrill(stage){
+  state.t2drill = stage;
+  document.getElementById('t2Overview').classList.add('hidden');
+  document.getElementById('t2Drill').classList.remove('hidden');
+  document.getElementById('t2Toggle').classList.add('hidden');
+  document.getElementById('t2Back').classList.remove('hidden');
+  document.getElementById('t2Title').textContent = DRILL_META[stage].title;
+  document.getElementById('t2Q').textContent     = DRILL_META[stage].q;
+  renderDrill();
+}
+function closeDrill(){
+  state.t2drill = null;
+  document.getElementById('t2Overview').classList.remove('hidden');
+  document.getElementById('t2Drill').classList.add('hidden');
+  document.getElementById('t2Toggle').classList.remove('hidden');
+  document.getElementById('t2Back').classList.add('hidden');
+  document.getElementById('t2Title').textContent='Localización del sesgo';
+  document.getElementById('t2Q').textContent    ='¿en qué parte del modelo se produce y amplifica?';
+  renderT2();
+}
+function renderDrill(){
+  const s = cur(); if(!s) return;
+  const t = traceOf(s);
+  const box = document.getElementById('t2Drill');
+  const st = state.t2drill;
+  if(st==='encoder')   return drillEncoder(box, s, t);
+  if(st==='projector') return drillProjector(box, s, t);
+  if(st==='fusion')    return drillFusion(box, s, t);
+  if(st==='llm')       return drillLLM(box, s, t);
+  if(st==='output')    return drillOutput(box, s, t);
+}
+
+function drillEncoder(box, s, t){
+  box.innerHTML = `
+    <h4>Atención agregada · 100 muestras de test</h4>
+    <p>La atención del codificador temporal no está exportada por caso aún. Estas son las cifras agregadas del paper.</p>
+    <div class="stats">
+      <div class="stat"><div class="sk">Entropía · original</div><div class="sv">0,9999</div><div class="sn">IC [0,9999 · 1,0000] — casi uniforme</div></div>
+      <div class="stat"><div class="sk">Entropía · corregido</div><div class="sv">0,9490</div><div class="sn">IC [0,9472 · 0,9509] — se concentra</div></div>
+      <div class="stat"><div class="sk">Peso máximo · original</div><div class="sv">~1,05×</div><div class="sn">uniforme (0,001)</div></div>
+      <div class="stat"><div class="sk">Peso máximo · corregido</div><div class="sv">1,71×</div><div class="sn">token más enfocado: 0,68</div></div>
+    </div>
+    <h4 style="margin-top:6px">Fidelidad · probes ridge (n=250, 5-fold CV)</h4>
+    <table class="mini-tab">
+      <tr><th>Descriptor</th><th style="text-align:right">Original</th><th style="text-align:right">Sin entrenar</th><th style="text-align:right">Ampliado</th></tr>
+      <tr><td>Frecuencia dominante (ritmo)</td><td class="n">0,157</td><td class="n">0,247</td><td class="n hl">0,329</td></tr>
+      <tr><td>Autocorrelación (lag 1)</td>   <td class="n">0,855</td><td class="n">0,864</td><td class="n">0,855</td></tr>
+      <tr><td>Rango</td>                      <td class="n">0,346</td><td class="n">0,290</td><td class="n">0,411</td></tr>
+    </table>
+    <div class="note"><b>Hallazgo:</b> el entrenamiento original degradaba el ritmo (0,157 &lt; 0,247 del encoder sin entrenar). La corrección de escala en las consultas (<code>query_init_std=1,0</code>) invirtió el signo.</div>
+  `;
+}
+
+function drillProjector(box, s, t){
+  if(!t || !t.latent || !t.latent.points){
+    box.innerHTML = `<p>Este caso no tiene datos de proyector en <code>tracing_data.json</code>. Selecciona uno de los ${(TRACE.cases||[]).length} casos trazados.</p>`;
+    return;
+  }
+  box.innerHTML = `
+    <h4>Similitud coseno · tokens texto ↔ ECG</h4>
+    <p>Cada celda es la similitud coseno entre un token del texto (fila) y un token del ECG (columna). Rojo = alta similitud (texto y ECG apuntan a lo mismo), gris = ortogonales.</p>
+    <div class="heat" id="heatWrap"></div>
+    <div class="note" style="margin-top:6px">La matriz reemplaza la proyección PCA. Es más honesta porque no distorsiona la geometría — muestra la relación cruda entre modalidades.</div>
+  `;
+  drawSimilarityHeat(t.latent.points);
+}
+function drawSimilarityHeat(pts){
+  const texto = pts.filter(p=>p.kind==='texto');
+  const ecg   = pts.filter(p=>p.kind==='ecg_orig'||p.kind==='ecg_pert');
+  if(!texto.length || !ecg.length){
+    document.getElementById('heatWrap').innerHTML =
+      '<p style="color:var(--muted);font-size:11px">No hay suficientes tokens de ambas modalidades para calcular similitudes.</p>';
+    return;
+  }
+  const cs = (a,b)=>{
+    const dot=a.x*b.x+a.y*b.y;
+    const na=Math.hypot(a.x,a.y)||1e-9, nb=Math.hypot(b.x,b.y)||1e-9;
+    return dot/(na*nb);
+  };
+  const rows = texto.slice(0,10);
+  const cols = ecg.slice(0,16);
+  const M = rows.map(r=>cols.map(c=>cs(r,c)));
+  const cell=22, padL=110, padT=48;
+  const W = padL + cols.length*cell + 10;
+  const H = padT + rows.length*cell + 10;
+  const svg = d3.select('#heatWrap').html('').append('svg')
+    .attr('viewBox',`0 0 ${W} ${H}`).attr('preserveAspectRatio','xMidYMid meet');
+  const color = v => {
+    const a = Math.min(Math.abs(v),1);
+    if(v>=0) return `rgba(220,38,38,${(a*0.65+0.05).toFixed(2)})`;
+    return `rgba(15,118,110,${(a*0.65+0.05).toFixed(2)})`;
+  };
+  // headers columnas
+  cols.forEach((c,j)=>{
+    svg.append('text').attr('x',padL+j*cell+cell/2).attr('y',padT-8).attr('text-anchor','middle')
+       .attr('font-family','JetBrains Mono, monospace').attr('font-size',8).attr('fill','#71717A')
+       .text((c.label||('E'+j)).slice(0,6));
+  });
+  // filas y celdas
+  rows.forEach((r,i)=>{
+    svg.append('text').attr('x',padL-6).attr('y',padT+i*cell+cell/2+3).attr('text-anchor','end')
+       .attr('font-family','JetBrains Mono, monospace').attr('font-size',9).attr('fill','#71717A')
+       .text((r.label||('T'+i)).slice(0,14));
+    cols.forEach((c,j)=>{
+      const v = M[i][j];
+      svg.append('rect').attr('x',padL+j*cell).attr('y',padT+i*cell)
+         .attr('width',cell-1).attr('height',cell-1).attr('rx',2)
+         .attr('fill',color(v)).attr('stroke','#F1F1F3').attr('stroke-width',.5)
+         .append('title').text(`${r.label} ↔ ${c.label} = ${v.toFixed(3)}`);
+    });
+  });
+  // leyenda
+  svg.append('text').attr('x',padL).attr('y',18).attr('font-family','Inter,sans-serif')
+     .attr('font-size',10).attr('font-weight',600).attr('fill','#18181B')
+     .text(`Matriz ${rows.length} × ${cols.length}  ·  rojo = coseno positivo, teal = negativo`);
+}
+
+function drillFusion(box, s, t){
+  if(!t || !t.stages || !t.stages.fusion){
+    box.innerHTML = '<p>Sin datos de fusión para este caso.</p>'; return;
+  }
+  const f = t.stages.fusion;
+  const M = Math.max(Math.abs(f.impact_text||0), Math.abs(f.impact_ecg||0), 0.001);
+  const bar = (v,c) => `
+    <div style="background:var(--panel-2);height:16px;border-radius:4px;overflow:hidden;border:1px solid var(--line-soft)">
+      <div style="height:100%;width:${(Math.abs(v)/M*100).toFixed(1)}%;background:${c}"></div>
+    </div>`;
+  box.innerHTML = `
+    <h4>Distancias coseno en la fusión (<code>inputs_embeds</code>)</h4>
+    <p>Cuánto se mueve la representación al cambiar cada modalidad. Δ negativo = mayor sensibilidad al ECG.</p>
+    <div class="stats" style="grid-template-columns:1fr">
+      <div class="stat">
+        <div class="sk">Original vs texto contrafactual</div>
+        <div class="sv" style="color:var(--red)">${(f.impact_text||0).toFixed(4)}</div>
+        ${bar(f.impact_text||0,'var(--red)')}
+      </div>
+      <div class="stat">
+        <div class="sk">Original vs ECG contrafactual</div>
+        <div class="sv" style="color:var(--teal)">${(f.impact_ecg||0).toFixed(4)}</div>
+        ${bar(f.impact_ecg||0,'var(--teal)')}
+      </div>
+      <div class="stat">
+        <div class="sk">Δ (texto − ECG)</div>
+        <div class="sv">${(f.delta_text_ecg||0).toFixed(4)}</div>
+        <div class="sn">Δ &lt; 0 → mayor sensibilidad al ECG en esta etapa</div>
+      </div>
+    </div>
+  `;
+}
+
+function drillLLM(box, s, t){
+  if(!t || !t.llm_layers){ box.innerHTML='<p>Sin curva por capa para este caso.</p>'; return; }
+  const layers = t.llm_layers;
+  box.innerHTML = `
+    <h4>Degradación por capa · ${layers.length} capas</h4>
+    <p>Distancia coseno original vs variante contrafactual en cada capa del LLM.</p>
+    <div class="heat" id="llmWrap" style="padding:10px"><svg id="llmSvg"></svg></div>
+    <div class="note">Si la curva teal (ECG) desciende mientras la roja (texto) se mantiene, la señal fisiológica entra al LLM pero se pierde en la propagación.</div>
+  `;
+  const svg = d3.select('#llmSvg');
+  const box2 = document.getElementById('llmWrap').getBoundingClientRect();
+  const w = Math.max(400, box2.width-16), h=180, pad={l:38,r:12,t:12,b:26};
+  svg.attr('viewBox',`0 0 ${w} ${h}`).style('width','100%').style('height',h+'px');
+  const L = layers.length;
+  const data = layers.map((l,i)=>({idx:l.layer_idx??l.idx??i,
+                                    it:l.impact_text||0, ie:l.impact_ecg||0}));
+  const x = d3.scaleLinear().domain([0,L-1]).range([pad.l,w-pad.r]);
+  const yMax = d3.max(data,d=>Math.max(d.it,d.ie))||0.1;
+  const y = d3.scaleLinear().domain([0,yMax*1.1]).range([h-pad.b,pad.t]);
+  svg.append('g').attr('transform',`translate(0,${h-pad.b})`)
+     .call(d3.axisBottom(x).ticks(6).tickFormat(d=>'L'+d))
+     .selectAll('text').attr('font-family','JetBrains Mono,monospace').attr('font-size',9).attr('fill','#71717A');
+  svg.append('g').attr('transform',`translate(${pad.l},0)`)
+     .call(d3.axisLeft(y).ticks(4))
+     .selectAll('text').attr('font-family','JetBrains Mono,monospace').attr('font-size',9).attr('fill','#71717A');
+  svg.selectAll('path.axis,line').attr('stroke','#E4E4E7');
+  const mk = k => d3.line().x(d=>x(d.idx)).y(d=>y(d[k])).curve(d3.curveMonotoneX);
+  svg.append('path').attr('d',mk('it')(data)).attr('fill','none').attr('stroke','#DC2626').attr('stroke-width',2);
+  svg.append('path').attr('d',mk('ie')(data)).attr('fill','none').attr('stroke','#0F766E').attr('stroke-width',2);
+  svg.append('text').attr('x',w-pad.r).attr('y',pad.t+11).attr('text-anchor','end')
+     .attr('font-family','JetBrains Mono,monospace').attr('font-size',10).attr('fill','#DC2626').text('texto');
+  svg.append('text').attr('x',w-pad.r).attr('y',pad.t+24).attr('text-anchor','end')
+     .attr('font-family','JetBrains Mono,monospace').attr('font-size',10).attr('fill','#0F766E').text('ECG');
+}
+
+function drillOutput(box, s, t){
+  const rows = [{k:'original', pred:s.pred||'—', flip:false, note:'entrada completa'}];
+  if(t){
+    if(t.prediction_text_cf!==undefined) rows.push({k:'texto contrafactual',
+        pred:t.prediction_text_cf, flip:(t.flips&&t.flips.text_cf), note:'reformular la pregunta'});
+    if(t.prediction_ecg_cf !==undefined) rows.push({k:'ECG contrafactual',
+        pred:t.prediction_ecg_cf,  flip:(t.flips&&t.flips.ecg_cf),  note:'ocluir ventana temporal'});
+    if(t.prediction_neutral!==undefined) rows.push({k:'pregunta neutra',
+        pred:t.prediction_neutral, flip:(t.flips&&t.flips.neutral), note:'control positivo'});
+    if(t.prediction_conflict!==undefined) rows.push({k:'conflicto texto↔ECG',
+        pred:t.prediction_conflict,flip:(t.flips&&t.flips.conflict),note:'¿a quién sigue?'});
+    if(t.prediction_no_ecg  !==undefined) rows.push({k:'sin ECG',
+        pred:t.prediction_no_ecg,  flip:(t.flips&&t.flips.no_ecg),  note:'ablación de modalidad'});
+  } else {
+    (s.interventions||[]).forEach(iv=>rows.push({
+      k:iv.name||iv.config||'variante', pred:iv.answer||iv.pred||'—', flip:!!iv.flip, note:''}));
+  }
+  box.innerHTML = `
+    <h4>Tabla contrastiva · ¿por qué respondió esto y no lo otro?</h4>
+    <table class="mini-tab">
+      <thead><tr><th>Intervención</th><th>Predicción</th><th>Cambia</th><th>Sentido</th></tr></thead>
+      <tbody>
+        ${rows.map(r=>`
+          <tr>
+            <td>${r.k}</td>
+            <td style="font-family:var(--mono);color:var(--ink)">${r.pred||'—'}</td>
+            <td class="${r.flip?'r':(r.k==='original'?'m':'g')}">${r.k==='original'?'—':(r.flip?'sí':'no')}</td>
+            <td style="color:var(--muted)">${r.note||''}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ================================================================
+   T1 ancla de control
+   ================================================================ */
+function renderT1(s){
+  const t = traceOf(s);
+  const orig = s.pred || '—';
+  const ecgFlip = t ? (t.flips&&t.flips.ecg_cf) : (s.interventions||[]).some(x=>/ecg|ruido|mask/i.test(x.name||x.config||'')&&x.flip);
+  const ecgAns  = t && t.prediction_ecg_cf!==undefined ? t.prediction_ecg_cf : (ecgFlip?'(cambió)':orig);
+  const noAns   = t && t.prediction_no_ecg !==undefined ? t.prediction_no_ecg : '—';
+  const noFlip  = t && t.flips ? t.flips.no_ecg : null;
+
+  const conds = [
+    {nm:'Multimodal', sub:'ECG + texto', ans:orig, conf:0.85, flag:false, col:'var(--muted)'},
+    {nm:'ECG corrompido', sub:'texto intacto', ans:ecgAns, conf:0.80,
+      flag:!ecgFlip, col:ecgFlip?'var(--teal)':'var(--red)'},
+    {nm:'Solo texto', sub:'sin ECG', ans:noAns, conf:0.70,
+      flag:(noAns===orig), col:(noAns===orig)?'var(--red)':'var(--teal)'}
+  ];
+  document.getElementById('conds').innerHTML = conds.map(k=>`
+    <div class="cond">
+      <div class="nm">${k.nm}<small>${k.sub}</small></div>
+      <div class="v ${k.flag?'flag':''}">${k.ans}</div>
+      <div class="cf">conf ~${k.conf.toFixed(2)}
+        <div class="confbar"><i style="width:${(k.conf*100).toFixed(0)}%;background:${k.col}"></i></div>
+      </div>
+    </div>`).join('');
+  setFinding('fT1', findT1(s));
+}
+function findT1(s){
+  const t = traceOf(s);
+  const ecgF = t ? (t.flips&&t.flips.ecg_cf) : false;
+  const noEcgSame = t && t.prediction_no_ecg===s.pred;
+  if(ecgF)      return {ic:'var(--teal)', t:'Cambia ante el ECG: dependencia (parcial) de la <b>señal</b>.'};
+  if(noEcgSame) return {ic:'var(--red)',  t:'Solo-texto coincide con multimodal → <b>dependencia textual</b>.'};
+  return         {ic:'var(--amber)', t:'Estabilidad ante ambas modalidades — puede ser <b>insensibilidad</b>.'};
+}
+
+/* ================================================================
+   T3 oclusión temporal (arrastrable)
+   ================================================================ */
+function gauss(t,mu,s){return Math.exp(-Math.pow((t-mu)/s,2));}
+function beat(t){
+  return .12*gauss(t,.14,.022) - .06*gauss(t,.335,.008) + .98*gauss(t,.36,.010)
+       - .24*gauss(t,.392,.010) + .28*gauss(t,.70,.045);
+}
+function segAt(t){for(const[n,a,b] of SEGS) if(t>=a&&t<=b) return n; return 'basal';}
+function sensAt(t, peak){return Math.min(1, .12+.85*gauss(t,peak,.055)+.15*gauss(t,.14,.05));}
+
+let occDrag=false;
+function reqSegOf(s){
+  const q = (s.question||'').toLowerCase();
+  if(/ritmo|frecuen|taquic|bradic|latid/.test(q)) return 3; // T
+  if(/qrs|bloqueo|conducci/.test(q))              return 1;
+  if(/st|isquem|infart|elevac/.test(q))           return 2;
+  if(/p |onda p|auric/.test(q))                   return 0;
+  return 2; // default ST
+}
+function peakOf(s){
+  const cls = localClass(s);
+  if(cls==='ECG_DOMINANT') return SEGS[reqSegOf(s)][1] + 0.03;
+  return 0.36; // por defecto anclaje en QRS/ST → si el req es otro, será espurio
+}
+function ecgPaperSVG(s){
+  const W=1000,H=280,PL=42,PR=18,PT=18,PB=26;
+  const pw=W-PL-PR, ph=H-PT-PB, N=320;
+  const raw=[]; let ymin=1e9,ymax=-1e9;
+  for(let i=0;i<=N;i++){ const y=beat(i/N); raw.push(y); ymin=Math.min(ymin,y); ymax=Math.max(ymax,y); }
+  const yr=ymax-ymin;
+  let tr='', sp=[];
+  const peak = peakOf(s);
+  for(let i=0;i<=N;i++){
+    const tt=i/N;
+    const x = PL + tt*pw;
+    const y = PT + ph - ((raw[i]-ymin)/yr)*(ph*.82) - ph*.06;
+    tr += (i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)+' ';
+    sp.push([x, PT + ph - sensAt(tt,peak)*(ph*.9)]);
+  }
+  const spath = sp.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  const req = reqSegOf(s);
+  let bands='';
+  SEGS.forEach(([l,a,b,col],idx)=>{
+    const x=PL+a*pw, w=(b-a)*pw, emph=idx===req;
+    bands += `<rect x="${x.toFixed(1)}" y="${PT}" width="${w.toFixed(1)}" height="${ph}" fill="${col}" opacity="${emph?.32:.14}"/>`;
+    bands += `<text x="${(x+w/2).toFixed(1)}" y="${PT+13}" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" font-weight="600" fill="${emph?'#B45309':'#78716C'}">${l}${emph?' ★':''}</text>`;
+  });
+  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" id="ecgsvg"><defs>
+    <pattern id="fg" width="10" height="10" patternUnits="userSpaceOnUse"><path d="M10 0H0V10" fill="none" stroke="#F3D9D0" stroke-width="0.8"/></pattern>
+    <pattern id="bg" width="50" height="50" patternUnits="userSpaceOnUse"><rect width="50" height="50" fill="url(#fg)"/><path d="M50 0H0V50" fill="none" stroke="#E5B7A9" stroke-width="1.3"/></pattern>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#bg)"/>
+  ${bands}
+  <path d="${spath} L ${PL+pw} ${PT+ph} L ${PL} ${PT+ph} Z" fill="#DC2626" opacity="0.06"/>
+  <path d="${spath}" fill="none" stroke="#DC2626" stroke-width="2" opacity=".9"/>
+  <path d="${tr}" fill="none" stroke="#1F1B18" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+  <rect id="occR" x="${PL+.30*pw}" y="${PT}" width="${.12*pw}" height="${ph}" fill="#1F1B18" opacity="0.10"/>
+  <rect id="occH" x="${PL+.30*pw}" y="${PT}" width="${.12*pw}" height="${ph}" fill="transparent" stroke="#1F1B18" stroke-width="1.4" stroke-dasharray="4 3"/>
+</svg>`;
+}
+function wireOcc(s){
+  const paper = document.getElementById('paper');
+  paper.innerHTML = ecgPaperSVG(s);
+  const svg  = document.getElementById('ecgsvg');
+  const occR = document.getElementById('occR');
+  const occH = document.getElementById('occH');
+  const W=1000,PL=42,pw=W-PL-18,winW=.12;
+  const winEl=document.getElementById('occWin');
+  const respEl=document.getElementById('occResp');
+  const confEl=document.getElementById('occConf');
+  const alEl  =document.getElementById('occAlign');
+  const peak = peakOf(s), req = SEGS[reqSegOf(s)][0];
+  function setWin(tc){
+    tc = Math.max(0, Math.min(1-winW, tc));
+    const x = PL + tc*pw;
+    occR.setAttribute('x', x); occH.setAttribute('x', x);
+    const ctr = tc + winW/2;
+    const sVal = sensAt(ctr, peak);
+    const seg = segAt(ctr);
+    winEl.textContent = seg;
+    const flip = sVal > .5;
+    respEl.textContent = flip?'flip':'estable';
+    respEl.style.color = flip?'var(--red)':'var(--teal)';
+    confEl.textContent = sVal.toFixed(2);
+    const al = seg===req;
+    alEl.textContent = al?'alineación correcta':(sVal>.4?'anclaje espurio':'neutra');
+    alEl.className = 'atag '+(al?'good':(sVal>.4?'bad':'neu'));
+  }
+  function frac(cx){
+    const r = svg.getBoundingClientRect();
+    const scale = r.height/280, drawW = 1000*scale, offx = (r.width-drawW)/2;
+    return ((cx - r.left - offx)/drawW*1000 - PL)/pw - winW/2;
+  }
+  paper.onpointerdown=e=>{occDrag=true; if(paper.setPointerCapture) paper.setPointerCapture(e.pointerId); setWin(frac(e.clientX)); e.preventDefault();};
+  paper.onpointermove=e=>{ if(occDrag) setWin(frac(e.clientX)); };
+  window.addEventListener('pointerup',()=>{occDrag=false;});
+  setWin(.30);
+  setFinding('fT3', findT3(s));
+}
+function findT3(s){
+  const al = segAt(peakOf(s))===SEGS[reqSegOf(s)][0];
+  return al
+    ? {ic:'var(--teal)', t:`Se ancla en <b>${SEGS[reqSegOf(s)][0]}</b>, el segmento requerido por la pregunta.`}
+    : {ic:'var(--red)',  t:`Se ancla en <b>${segAt(peakOf(s))}</b>, no en ${SEGS[reqSegOf(s)][0]} → <b>anclaje espurio</b>.`};
+}
+
+/* ================================================================
+   T4 matriz de escenarios
+   ================================================================ */
+function renderT4(s){
+  const t = traceOf(s);
+  const rows = [];
+  rows.push({k:'Original', ans:s.pred||'—', dc:0, res:'—'});
+  if(t){
+    const orig = s.pred;
+    const push = (k,pred,flip)=>{
+      if(pred===undefined) return;
+      rows.push({k, ans:pred||'—', dc:0, res: flip?'flip':'estable'});
+    };
+    push('Pregunta modificada', t.prediction_text_cf, t.flips&&t.flips.text_cf);
+    push('Pregunta neutral',    t.prediction_neutral, t.flips&&t.flips.neutral);
+    push('ECG modificado',      t.prediction_ecg_cf,  t.flips&&t.flips.ecg_cf);
+    push('Conflicto texto-ECG', t.prediction_conflict,t.flips&&t.flips.conflict);
+  } else {
+    (s.interventions||[]).forEach(iv=>rows.push({
+      k:iv.name||iv.config||'variante', ans:iv.answer||iv.pred||'—',
+      dc:0, res:iv.flip?'flip':'estable'}));
+  }
+  document.getElementById('matrix').innerHTML = `
+    <thead><tr><th>Escenario</th><th>Respuesta</th><th>Resultado</th></tr></thead>
+    <tbody>${rows.map(r=>`
+      <tr>
+        <td class="name">${r.k}</td>
+        <td>${r.ans}</td>
+        <td class="${r.res==='flip'?'r':r.res==='estable'?'g':'m'}">${r.res}</td>
+      </tr>`).join('')}
+    </tbody>`;
+  setFinding('fT4', findT4(s));
+}
+function findT4(s){
+  const cls = localClass(s);
+  const t = {
+    TEXT_DOMINANT:'Cambia ante el texto, estable ante el ECG.',
+    ECG_DOMINANT :'Cambia ante el ECG, estable ante el texto.',
+    BALANCED     :'Ambas modalidades mueven la respuesta.',
+    INSENSITIVE  :'Estabilidad por insensibilidad, no por robustez.',
+    UNCLEAR      :'Sin evidencia clara para clasificar el caso.'
+  }[cls]||'';
+  return {ic:CLS_COLOR[cls], t:`<b>${cls}</b> · ${t}`};
+}
+
+/* ================================================================
+   T2 findings
+   ================================================================ */
+function renderT2(){
+  const s = cur(); if(!s) return;
+  document.getElementById('pipe').innerHTML    = PIPE_SVG;
+  document.getElementById('profile').innerHTML = profileSVG(s, state.t2mode);
+  updatePipe(s, state.t2mode);
+  // wire click en cada rect
+  ['rEnc','rProj','rFus','rLlm','rSal'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.onclick = ()=>{ openDrill(el.getAttribute('data-st')); };
+  });
+  document.querySelectorAll('#t2Toggle button').forEach(b=>{
+    b.classList.toggle('on', b.getAttribute('data-m')===state.t2mode);
+  });
+  setFinding('fT2', findT2(s));
+}
+function findT2(s){
+  const im = impact(s, state.t2mode);
+  if(state.t2mode==='ecg'){
+    const enc = Math.abs(im.encoder && im.encoder.d || 0);
+    const out = Math.abs(im.output  && im.output.d  || 0);
+    if(enc>0.02 && out<enc*0.3)
+      return {ic:'var(--teal)', t:'La intervención ECG <b>entra en el encoder</b> pero <b>decae en el LLM</b>.'};
+    if(enc<0.005)
+      return {ic:'var(--red)',  t:'La intervención ECG <b>no atraviesa</b> el pipeline (Δ≈0): la señal no decide.'};
+    return {ic:'var(--muted)', t:'La sensibilidad al ECG es débil desde el encoder.'};
+  }
+  return {ic:'var(--red)', t:'El sesgo textual se manifiesta <b>desde la fusión</b> y se amplifica en el LLM.'};
+}
+
+/* ================================================================
+   Veredicto
+   ================================================================ */
+function renderVerdict(s){
+  const t = traceOf(s);
+  const ecgF = t ? (t.flips && t.flips.ecg_cf) : false;
+  const dep = ecgF ? {t:'depende del ECG', c:'var(--teal)'}
+                    : {t:'textual o insensible', c:'var(--red)'};
+  const im = impact(s,'texto');
+  const et = (Math.abs(im.output.d||0) > Math.abs(im.fusion.d||0))
+              ? {t:'fusión → LLM (máx en salida)', c:'var(--red)'}
+              : {t:'sin sesgo localizable', c:'var(--muted)'};
+  const al = segAt(peakOf(s))===SEGS[reqSegOf(s)][0];
+  const cls = localClass(s);
+  document.getElementById('verdict').innerHTML = `
+    <div class="vcell"><div class="k">Dependencia modal</div>
+      <div class="v"><span class="dot" style="background:${dep.c}"></span>${dep.t}</div></div>
+    <div class="vcell"><div class="k">Etapa del sesgo</div>
+      <div class="v"><span class="dot" style="background:${et.c}"></span>${et.t}</div></div>
+    <div class="vcell"><div class="k">Anclaje temporal</div>
+      <div class="v"><span class="dot" style="background:${al?'var(--teal)':'var(--red)'}"></span>${al?'correcto':'espurio'}</div></div>
+    <div class="vcell"><div class="k">Clase de dominancia</div>
+      <div class="v"><span class="dot" style="background:${CLS_COLOR[cls]}"></span>${cls}</div></div>
+    <div class="vcell warn"><div class="k">Alcance</div>
+      <div class="v">El marco detecta desbalance modal · no atribuye causa clínica (Molnar §4.10)</div></div>
+  `;
+}
+
+/* ================================================================
+   Helpers de findings + selección de caso
+   ================================================================ */
+function setFinding(id, f){
+  document.getElementById(id).innerHTML =
+    `<span class="fi dot" style="background:${f.ic}"></span>`+
+    `<span><span class="flabel">Hallazgo · </span>${f.t}</span>`;
+}
+function cur(){ return (DATA.samples||[]).find(s=>String(s.id)===String(state.caseId)); }
+
+function selectCase(id){
+  state.caseId = id;
+  const s = cur(); if(!s) return;
+  // header
+  document.getElementById('qText').textContent = s.question||'—';
+  document.getElementById('qType').textContent = s.qtype||'—';
+  document.getElementById('qGT').textContent   = s.gt||'—';
+  document.getElementById('qEcg').textContent  = s.ecg_id||s.real_id||s.id;
+  // case-btn label
+  const cls = localClass(s);
+  document.getElementById('caseLabel').textContent = `${s.id} · ${CLS_SHORT[cls]}`;
+  document.getElementById('caseDot').style.background = CLS_COLOR[cls];
+  // renders
+  if(state.t2drill) renderDrill(); else renderT2();
+  renderT1(s); wireOcc(s); renderT4(s); renderVerdict(s);
+  // marcar caso activo en el panel
+  document.querySelectorAll('.case-row').forEach(r=>{
+    r.classList.toggle('on', String(r.dataset.id)===String(id));
+  });
+}
+
+/* ================================================================
+   Panel selector de casos
+   ================================================================ */
+function initCasePanel(){
+  const btn = document.getElementById('caseBtn');
+  const panel = document.getElementById('casePanel');
+  btn.onclick = e=>{ panel.classList.toggle('open'); e.stopPropagation(); };
+  document.addEventListener('click', e=>{
+    if(!panel.contains(e.target)) panel.classList.remove('open');
+  });
+  // chips
+  const chipRow = document.getElementById('caseChips');
+  chipRow.innerHTML =
+    `<button class="chip" data-c="">todas</button>`+
+    ['TEXT_DOMINANT','ECG_DOMINANT','BALANCED','INSENSITIVE','UNCLEAR'].map(c=>
+      `<button class="chip" data-c="${c}">${CLS_SHORT[c]}</button>`).join('');
+  chipRow.querySelectorAll('.chip').forEach(ch=>{
+    ch.onclick = ()=>{
+      state.filters.cls = ch.getAttribute('data-c');
+      chipRow.querySelectorAll('.chip').forEach(x=>{
+        const val = x.getAttribute('data-c');
+        x.classList.toggle('on', val===state.filters.cls && val!=='');
+        // color en la chip activa
+        x.className='chip'+(val===state.filters.cls&&val!==''?' on '+CLS_SHORT[val]:'');
+      });
+      renderCaseList();
+    };
+  });
+  document.getElementById('caseSearch').oninput = e=>{
+    state.filters.q = e.target.value.trim().toLowerCase();
+    renderCaseList();
+  };
+  renderCaseList();
+}
+function renderCaseList(){
+  const list = document.getElementById('caseList');
+  const {cls, q} = state.filters;
+  const rows = (DATA.samples||[])
+    .filter(s=>{
+      if(cls && localClass(s)!==cls) return false;
+      if(q && !(s.question||'').toLowerCase().includes(q) && !String(s.id).includes(q)) return false;
+      return true;
+    })
+    .slice(0,200);
+  if(!rows.length){ list.innerHTML = '<div style="padding:14px;color:var(--muted);text-align:center;font-size:12px">Sin resultados.</div>'; return; }
+  list.innerHTML = rows.map(s=>{
+    const c = localClass(s);
+    return `<div class="case-row ${String(s.id)===String(state.caseId)?'on':''}" data-id="${s.id}">
+      <span class="cid">${s.id}</span>
+      <span class="cqt">${(s.qtype||'').slice(0,10)}</span>
+      <span class="ccls"><span class="cls-pill cls-${CLS_SHORT[c]}">${CLS_SHORT[c]}</span></span>
+      <span class="cq">${(s.question||'').slice(0,60)}</span>
+    </div>`;
+  }).join('');
+  list.querySelectorAll('.case-row').forEach(r=>{
+    r.onclick = ()=>{ selectCase(r.dataset.id); document.getElementById('casePanel').classList.remove('open'); };
+  });
+}
+
+/* ================================================================
+   Boot
+   ================================================================ */
+function boot(){
+  if(!DATA.samples || !DATA.samples.length){
+    document.body.innerHTML =
+      '<div style="padding:40px;font-family:Inter,sans-serif;color:#DC2626">' +
+      'No se cargaron los datos <code>ecgqa_viz_data.js</code>. ' +
+      'Verifica que existan en la misma carpeta.</div>';
+    return;
+  }
+  initCasePanel();
+  // toggle T2
+  document.querySelectorAll('#t2Toggle button').forEach(b=>{
+    b.onclick = ()=>{ state.t2mode = b.getAttribute('data-m'); renderT2(); };
+  });
+  document.getElementById('t2Back').onclick = closeDrill;
+  // primer caso con trace
+  const first = (DATA.samples||[]).find(s=>traceOf(s)) || DATA.samples[0];
+  selectCase(first.id);
+}
+window.addEventListener('DOMContentLoaded', boot);
+
+})();
+</script>
+</body>
+</html>

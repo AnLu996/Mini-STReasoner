@@ -14,6 +14,15 @@ from .time_series_encoder import TimeSeriesEncoder
 class MiniSTReasonerOutput:
     llm_output: Any
     temporal_attention: torch.Tensor
+    # ``bigru_output``: pre-pool GRU trace ``[B, T', temporal_dim]``. Populated when the
+    # series is used; ``None`` otherwise. Kept separate from ``temporal_attention`` so
+    # the audit ledger can measure accessibility BEFORE the 12,000:4 attention pool
+    # (needed to distinguish H2 pooling-destructive from H3 projector-destructive).
+    bigru_output: torch.Tensor | None = None
+    # ``projected_tokens``: output of the temporal projector ``[B, K, hidden_size]``.
+    # Same rationale: the ledger needs a hook here to separate H3 from H4 (geometric
+    # misalignment in the LLM key-space).
+    projected_tokens: torch.Tensor | None = None
 
 
 class MiniSTReasoner(nn.Module):
@@ -27,6 +36,7 @@ class MiniSTReasoner(nn.Module):
         temporal_num_layers: int = 1,
         query_init_std: float = 0.02,
         match_embedding_scale: bool = False,
+        projector_kind: str = "mlp",
     ) -> None:
         super().__init__()
         self.llm = llm
@@ -42,7 +52,9 @@ class MiniSTReasoner(nn.Module):
         output_scale = (
             self.embedding_norm(llm) / hidden_size**0.5 if match_embedding_scale else None
         )
-        self.temporal_projector = TemporalProjector(temporal_dim, hidden_size, output_scale)
+        self.temporal_projector = TemporalProjector(
+            temporal_dim, hidden_size, output_scale, kind=projector_kind,
+        )
         self.num_temporal_tokens = num_temporal_tokens
 
     @staticmethod
@@ -63,7 +75,13 @@ class MiniSTReasoner(nn.Module):
         time_mask: torch.Tensor | None = None,
         use_text: bool = True,
         use_series: bool = True,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        return_intermediates: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor | None]]:
+        """Encode the two modalities and return ``inputs_embeds``, the combined mask
+        and the temporal attention. If ``return_intermediates=True``, also returns a
+        dict with the pre-pool GRU trace (``h_bigru``) and the projected tokens
+        (``h_proj``); both are ``None`` if the corresponding path did not run.
+        """
         device = self.input_device
         input_ids = input_ids.to(device)
         attention_mask = attention_mask.to(device)
@@ -73,13 +91,16 @@ class MiniSTReasoner(nn.Module):
             text_embeds = text_embeds[:, :0]
             attention_mask = attention_mask[:, :0]
 
+        bigru_output: torch.Tensor | None = None
+        projected_tokens: torch.Tensor | None = None
         if use_series:
             encoder_device = next(self.time_series_encoder.parameters()).device
-            temporal_tokens, temporal_attention = self.time_series_encoder(
+            temporal_tokens, temporal_attention, bigru_output = self.time_series_encoder(
                 time_series.to(encoder_device),
                 time_mask.to(encoder_device) if time_mask is not None else None,
             )
-            temporal_embeds = self.temporal_projector(temporal_tokens).to(device=device, dtype=text_embeds.dtype)
+            projected_tokens = self.temporal_projector(temporal_tokens).to(device=device, dtype=text_embeds.dtype)
+            temporal_embeds = projected_tokens
             temporal_mask = torch.ones(
                 temporal_embeds.shape[:2], dtype=attention_mask.dtype, device=device
             )
@@ -94,6 +115,11 @@ class MiniSTReasoner(nn.Module):
 
         inputs_embeds = torch.cat([temporal_embeds, text_embeds], dim=1)
         combined_mask = torch.cat([temporal_mask, attention_mask], dim=1)
+        if return_intermediates:
+            return inputs_embeds, combined_mask, temporal_attention, {
+                "bigru_output": bigru_output,
+                "projected_tokens": projected_tokens,
+            }
         return inputs_embeds, combined_mask, temporal_attention
 
     def forward(
@@ -105,8 +131,8 @@ class MiniSTReasoner(nn.Module):
         labels: torch.Tensor | None = None,
         **kwargs: Any,
     ) -> MiniSTReasonerOutput:
-        inputs_embeds, combined_mask, temporal_attention = self.encode_modalities(
-            input_ids, attention_mask, time_series, time_mask
+        inputs_embeds, combined_mask, temporal_attention, intermediates = self.encode_modalities(
+            input_ids, attention_mask, time_series, time_mask, return_intermediates=True
         )
         combined_labels = None
         if labels is not None:
@@ -123,7 +149,12 @@ class MiniSTReasoner(nn.Module):
             labels=combined_labels,
             **kwargs,
         )
-        return MiniSTReasonerOutput(output, temporal_attention)
+        return MiniSTReasonerOutput(
+            llm_output=output,
+            temporal_attention=temporal_attention,
+            bigru_output=intermediates["bigru_output"],
+            projected_tokens=intermediates["projected_tokens"],
+        )
 
     @torch.inference_mode()
     def generate(

@@ -61,7 +61,15 @@ class TimeSeriesEncoder(nn.Module):
 
     def forward(
         self, time_series: torch.Tensor, time_mask: torch.Tensor | None = None
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Encode the series and return post-pool tokens, attention and the pre-pool GRU trace.
+
+        The third return, ``bigru_output``, is the T'-length sequence produced by the
+        GRU + output projection + LayerNorm, *before* the attention pooling collapses it
+        to ``num_temporal_tokens`` tokens. Exposing it here is what allows H2 (pooling
+        destructive) and H3 (projector destructive) to be told apart downstream: a linear
+        probe at this stage measures accessibility *before* the 12,000:4 compression.
+        """
         x = self._canonicalize(time_series).float()
         if time_mask is None:
             time_mask = torch.ones(x.shape[:2], dtype=torch.bool, device=x.device)
@@ -78,9 +86,10 @@ class TimeSeriesEncoder(nn.Module):
 
         encoded, _ = self.gru(self.input_projection(x))
         encoded = self.norm(self.output_projection(encoded))
+        bigru_output = encoded  # [B, T', temporal_dim] — h_bigru in the audit ledger.
         scores = torch.einsum("btd,kd->bkt", encoded, self.token_queries)
         scores = scores / (encoded.shape[-1] ** 0.5)
         scores = scores.masked_fill(~time_mask[:, None, :], torch.finfo(scores.dtype).min)
         attention = torch.softmax(scores, dim=-1)
-        temporal_tokens = torch.einsum("bkt,btd->bkd", attention, encoded)
-        return temporal_tokens, attention
+        temporal_tokens = torch.einsum("bkt,btd->bkd", attention, encoded)  # h_pool: [B, K, temporal_dim]
+        return temporal_tokens, attention, bigru_output
